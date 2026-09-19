@@ -1,27 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
-import { fetchIndexedNaverUrls } from "@/lib/googleSearch";
-import { addApiKey, isKeyExhausted, loadApiKeys, makeRotatingCseFetcher, removeApiKey, type ApiKeyEntry } from "@/lib/apiKeys";
+import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
+import { inspectUrlsBatch } from "@/lib/searchConsole";
 import { requestIndexingBatch, type IndexRequestResult } from "@/lib/googleIndexing";
 import {
-  getCseId,
   getLastBlogId,
   getServiceAccount,
   loadReport,
   saveReport,
-  setCseId as persistCseId,
   setLastBlogId,
   setServiceAccount,
   type DiagnosisEntry,
   type DiagnosisReport,
 } from "@/lib/storage";
 
+function siteUrlFor(blogId: string): string {
+  return `https://blog.naver.com/${blogId}/`;
+}
+
 export default function Home() {
-  const [cseId, setCseIdState] = useState("");
-  const [apiKeys, setApiKeys] = useState<ApiKeyEntry[]>([]);
-  const [newKey, setNewKey] = useState("");
   const [saJson, setSaJson] = useState("");
   const [hasServiceAccount, setHasServiceAccount] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -38,8 +36,6 @@ export default function Home() {
   const [indexProgress, setIndexProgress] = useState("");
 
   useEffect(() => {
-    setCseIdState(getCseId());
-    setApiKeys(loadApiKeys());
     setHasServiceAccount(!!getServiceAccount());
     const lastBlogId = getLastBlogId();
     setBlogId(lastBlogId);
@@ -48,20 +44,6 @@ export default function Home() {
       if (saved) setReport(saved);
     }
   }, []);
-
-  function handleSaveCseId() {
-    persistCseId(cseId);
-  }
-
-  function handleAddKey() {
-    if (!newKey.trim()) return;
-    setApiKeys(addApiKey(newKey));
-    setNewKey("");
-  }
-
-  function handleRemoveKey(key: string) {
-    setApiKeys(removeApiKey(key));
-  }
 
   function handleSaveServiceAccount() {
     const err = setServiceAccount(saJson);
@@ -75,17 +57,16 @@ export default function Home() {
   }
 
   async function handleDiagnose() {
-    const trimmedBlogId = blogId.trim();
+    const trimmedBlogId = extractBlogId(blogId);
     if (!trimmedBlogId) {
       setError("블로그 ID를 입력해주세요.");
       return;
     }
-    if (!cseId) {
-      setError("설정에서 Google Custom Search 엔진 ID(cx)를 먼저 등록해주세요.");
-      return;
-    }
-    if (apiKeys.length === 0) {
-      setError("설정에서 Google API 키를 최소 1개 등록해주세요.");
+    setBlogId(trimmedBlogId);
+
+    const sa = getServiceAccount();
+    if (!sa) {
+      setError("설정에서 Google 서비스 계정 키(JSON)를 먼저 등록해주세요.");
       return;
     }
 
@@ -98,16 +79,20 @@ export default function Home() {
       setProgress(`"${trimmedBlogId}" 블로그 글 목록 수집 중...`);
       const posts = await fetchAllNaverPosts(trimmedBlogId);
 
-      setProgress(`구글 색인 상태 조회 중 (총 ${posts.length}개 글)...`);
-      const indexedSet = await fetchIndexedNaverUrls(trimmedBlogId, makeRotatingCseFetcher(cseId));
+      const siteUrl = siteUrlFor(trimmedBlogId);
+      const urls = posts.map((p) => naverPostUrl(trimmedBlogId, p.logNo));
+
+      const inspections = await inspectUrlsBatch(urls, siteUrl, sa, 150, (_result, done, total) =>
+        setProgress(`구글 색인 상태 확인 중... (${done}/${total})`),
+      );
 
       setProgress("결과 정리 중...");
-      const entries: DiagnosisEntry[] = posts.map((p) => ({
+      const entries: DiagnosisEntry[] = posts.map((p, i) => ({
         logNo: p.logNo,
         title: p.title,
         addDate: p.addDate,
-        url: naverPostUrl(trimmedBlogId, p.logNo),
-        indexed: indexedSet.has(`${trimmedBlogId}/${p.logNo}`),
+        url: urls[i],
+        indexed: inspections[i].indexed,
       }));
 
       const indexedCount = entries.filter((e) => e.indexed).length;
@@ -123,7 +108,6 @@ export default function Home() {
       saveReport(newReport);
       setLastBlogId(trimmedBlogId);
       setReport(newReport);
-      setApiKeys(loadApiKeys());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -173,49 +157,13 @@ export default function Home() {
 
       <section className="card">
         <button className="settingsToggle" onClick={() => setSettingsOpen((v) => !v)}>
-          {settingsOpen ? "▼ 설정 닫기" : "▶ 설정 (API 키 / 서비스 계정)"}
+          {settingsOpen ? "▼ 설정 닫기" : "▶ 설정 (서비스 계정)"}
         </button>
 
         {settingsOpen && (
           <div className="settingsBody">
             <div className="field">
-              <label>Custom Search 엔진 ID (cx)</label>
-              <a className="linkHint" href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" rel="noopener noreferrer">
-                → 검색엔진 만들고 ID 발급받기 (programmablesearchengine.google.com)
-              </a>
-              <div className="row">
-                <input value={cseId} onChange={(e) => setCseIdState(e.target.value)} placeholder="예: 017576662..." />
-                <button onClick={handleSaveCseId}>저장</button>
-              </div>
-            </div>
-
-            <div className="field">
-              <label>Google API 키 목록 (사용량 소진 시 자동으로 다음 키로 전환)</label>
-              <a className="linkHint" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
-                → API 키 발급받기 (console.cloud.google.com/apis/credentials, Custom Search API 활성화 필요)
-              </a>
-              {apiKeys.length === 0 && <p className="hint">등록된 키가 없습니다.</p>}
-              <ul className="keyList">
-                {apiKeys.map((k) => (
-                  <li key={k.key} className="keyItem">
-                    <span className="keyValue">{k.key.slice(0, 8)}…{k.key.slice(-4)}</span>
-                    <span className={isKeyExhausted(k) ? "badge badgeWarn" : "badge badgeOk"}>
-                      {isKeyExhausted(k) ? "소진됨" : "정상"}
-                    </span>
-                    <button className="removeBtn" onClick={() => handleRemoveKey(k.key)}>
-                      삭제
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="row">
-                <input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="새 API 키 붙여넣기" />
-                <button onClick={handleAddKey}>+ 추가</button>
-              </div>
-            </div>
-
-            <div className="field">
-              <label>Google 서비스 계정 키 (JSON) — 색인 요청용</label>
+              <label>Google 서비스 계정 키 (JSON) — 진단 &amp; 색인 요청 공용</label>
               <a
                 className="linkHint"
                 href="https://console.cloud.google.com/iam-admin/serviceaccounts"
@@ -224,6 +172,20 @@ export default function Home() {
               >
                 → 서비스 계정 만들고 키(JSON) 발급받기 (console.cloud.google.com/iam-admin/serviceaccounts)
               </a>
+              <p className="hint">
+                발급 후 이 계정 이메일(client_email)을{" "}
+                <a
+                  className="linkHint"
+                  style={{ display: "inline" }}
+                  href="https://search.google.com/search-console"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Search Console
+                </a>
+                에서 <code>https://blog.naver.com/본인ID/</code> URL 접두어 속성의 소유자로 등록해야 진단/색인 요청이
+                동작합니다 (README 참고).
+              </p>
               <p className="hint">{hasServiceAccount ? "✓ 등록됨" : "미등록"}</p>
               <textarea
                 value={saJson}
@@ -241,7 +203,11 @@ export default function Home() {
       <section className="card">
         <label>네이버 블로그 ID</label>
         <div className="row">
-          <input value={blogId} onChange={(e) => setBlogId(e.target.value)} placeholder="blog.naver.com/이 부분" />
+          <input
+            value={blogId}
+            onChange={(e) => setBlogId(e.target.value)}
+            placeholder="예: elecinout (블로그 주소를 통째로 붙여넣어도 됩니다)"
+          />
           <button onClick={handleDiagnose} disabled={diagnosing}>
             {diagnosing ? "진단 중..." : "진단하기"}
           </button>

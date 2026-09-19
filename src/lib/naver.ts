@@ -1,3 +1,23 @@
+/**
+ * Accepts either a bare blog ID or a full blog.naver.com/m.blog.naver.com URL
+ * (any path/query) and returns just the ID, so pasting a link works too.
+ */
+export function extractBlogId(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  try {
+    const withProtocol = /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const u = new URL(withProtocol);
+    if (/(^|\.)blog\.naver\.com$/.test(u.hostname)) {
+      const first = u.pathname.split("/").filter(Boolean)[0];
+      if (first) return first;
+    }
+  } catch {
+    // not a URL — fall through and treat the raw input as the ID
+  }
+  return trimmed;
+}
+
 export interface NaverPost {
   logNo: string;
   title: string;

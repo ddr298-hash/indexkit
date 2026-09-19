@@ -18,7 +18,6 @@ export interface DiagnosisReport {
 }
 
 const REPORT_PREFIX = "indexkit.report.";
-const CSE_ID_KEY = "indexkit.cseId";
 const SERVICE_ACCOUNT_KEY = "indexkit.serviceAccount";
 const LAST_BLOG_ID_KEY = "indexkit.lastBlogId";
 
@@ -30,15 +29,6 @@ export function loadReport(blogId: string): DiagnosisReport | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(`${REPORT_PREFIX}${blogId}`);
   return raw ? (JSON.parse(raw) as DiagnosisReport) : null;
-}
-
-export function getCseId(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(CSE_ID_KEY) ?? "";
-}
-
-export function setCseId(id: string): void {
-  window.localStorage.setItem(CSE_ID_KEY, id.trim());
 }
 
 export function getServiceAccount(): ServiceAccount | null {

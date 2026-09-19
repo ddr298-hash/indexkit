@@ -1,7 +1,23 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { fetchAllNaverPosts, naverPostUrl } from "../src/lib/naver";
-import { fetchIndexedNaverUrls, makeSimpleCseFetcher } from "../src/lib/googleSearch";
+import { inspectUrlsBatch } from "../src/lib/searchConsole";
 import { saveReport, type DiagnosisEntry } from "../src/lib/report";
+import type { ServiceAccount } from "../src/lib/googleIndexing";
+
+function loadServiceAccount(): ServiceAccount {
+  const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+  if (!keyPath) {
+    console.error("GOOGLE_SERVICE_ACCOUNT_KEY_PATH 환경변수가 필요합니다 (.env.local 확인).");
+    process.exit(1);
+  }
+  const parsed = JSON.parse(readFileSync(keyPath, "utf-8"));
+  if (!parsed.client_email || !parsed.private_key) {
+    console.error(`서비스 계정 키 파일에 client_email/private_key가 없습니다: ${keyPath}`);
+    process.exit(1);
+  }
+  return { client_email: parsed.client_email, private_key: parsed.private_key };
+}
 
 async function main() {
   const blogId = process.argv[2] || process.env.NAVER_BLOG_ID;
@@ -10,28 +26,27 @@ async function main() {
     process.exit(1);
   }
 
-  const apiKey = process.env.GOOGLE_CSE_API_KEY;
-  const cseId = process.env.GOOGLE_CSE_ID;
-  if (!apiKey || !cseId) {
-    console.error("GOOGLE_CSE_API_KEY / GOOGLE_CSE_ID 환경변수가 필요합니다 (.env.local 확인).");
-    process.exit(1);
-  }
+  const serviceAccount = loadServiceAccount();
+  const siteUrl = `https://blog.naver.com/${blogId}/`;
 
   console.log(`[1/3] "${blogId}" 블로그 글 목록 수집 중...`);
   const posts = await fetchAllNaverPosts(blogId);
   console.log(`  → 총 ${posts.length}개 글 발견`);
 
-  console.log(`[2/3] 구글 색인 상태 조회 중 (site:blog.naver.com/${blogId})...`);
-  const indexedSet = await fetchIndexedNaverUrls(blogId, makeSimpleCseFetcher(apiKey, cseId));
-  console.log(`  → 구글에 색인된 URL ${indexedSet.size}개 확인`);
+  console.log(`[2/3] 구글 색인 상태 확인 중 (Search Console URL 검사, 글마다 1회 호출)...`);
+  const urls = posts.map((p) => naverPostUrl(blogId, p.logNo));
+  const inspections = await inspectUrlsBatch(urls, siteUrl, serviceAccount, 150, (_result, done, total) => {
+    if (done % 20 === 0 || done === total) process.stdout.write(`\r  → ${done}/${total}`);
+  });
+  process.stdout.write("\n");
 
   console.log(`[3/3] 진단 결과 정리 중...`);
-  const entries: DiagnosisEntry[] = posts.map((p) => ({
+  const entries: DiagnosisEntry[] = posts.map((p, i) => ({
     logNo: p.logNo,
     title: p.title,
     addDate: p.addDate,
-    url: naverPostUrl(blogId, p.logNo),
-    indexed: indexedSet.has(`${blogId}/${p.logNo}`),
+    url: urls[i],
+    indexed: inspections[i].indexed,
   }));
 
   const indexedCount = entries.filter((e) => e.indexed).length;
