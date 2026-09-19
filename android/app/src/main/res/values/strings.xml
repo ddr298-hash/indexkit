@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">인덱스키트</string>
+    <string name="title_activity_main">인덱스키트</string>
+    <string name="package_name">kr.indexkit.app</string>
+    <string name="custom_url_scheme">kr.indexkit.app</string>
+</resources>

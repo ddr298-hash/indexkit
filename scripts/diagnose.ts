@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { fetchAllNaverPosts, naverPostUrl } from "../src/lib/naver";
-import { fetchIndexedNaverUrls } from "../src/lib/googleSearch";
+import { fetchIndexedNaverUrls, makeSimpleCseFetcher } from "../src/lib/googleSearch";
 import { saveReport, type DiagnosisEntry } from "../src/lib/report";
 
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
   console.log(`  → 총 ${posts.length}개 글 발견`);
 
   console.log(`[2/3] 구글 색인 상태 조회 중 (site:blog.naver.com/${blogId})...`);
-  const indexedSet = await fetchIndexedNaverUrls(blogId, apiKey, cseId);
+  const indexedSet = await fetchIndexedNaverUrls(blogId, makeSimpleCseFetcher(apiKey, cseId));
   console.log(`  → 구글에 색인된 URL ${indexedSet.size}개 확인`);
 
   console.log(`[3/3] 진단 결과 정리 중...`);

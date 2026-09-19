@@ -1,6 +1,21 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { latestReportPath, loadReport } from "../src/lib/report";
-import { requestIndexingBatch } from "../src/lib/googleIndexing";
+import { requestIndexingBatch, type ServiceAccount } from "../src/lib/googleIndexing";
+
+function loadServiceAccount(): ServiceAccount {
+  const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+  if (!keyPath) {
+    console.error("GOOGLE_SERVICE_ACCOUNT_KEY_PATH 환경변수가 필요합니다 (.env.local 확인).");
+    process.exit(1);
+  }
+  const parsed = JSON.parse(readFileSync(keyPath, "utf-8"));
+  if (!parsed.client_email || !parsed.private_key) {
+    console.error(`서비스 계정 키 파일에 client_email/private_key가 없습니다: ${keyPath}`);
+    process.exit(1);
+  }
+  return { client_email: parsed.client_email, private_key: parsed.private_key };
+}
 
 async function main() {
   const blogId = process.argv[2] || process.env.NAVER_BLOG_ID;
@@ -9,6 +24,7 @@ async function main() {
     process.exit(1);
   }
 
+  const serviceAccount = loadServiceAccount();
   const path = latestReportPath(blogId);
   if (!path) {
     console.error(`"${blogId}"의 진단 보고서가 없습니다. 먼저 실행하세요: npm run diagnose -- ${blogId}`);
@@ -28,7 +44,7 @@ async function main() {
   console.log("(주의: 이 API는 공식적으로 채용공고/라이브방송 페이지 전용이며, 일반 블로그 글에는");
   console.log(" 색인이 보장되지 않습니다. 또한 blog.naver.com 소유권을 서치 콘솔에서 확인해야 동작합니다.)\n");
 
-  const results = await requestIndexingBatch(missing.map((e) => e.url));
+  const results = await requestIndexingBatch(missing.map((e) => e.url), serviceAccount);
 
   const ok = results.filter((r) => r.ok);
   const failed = results.filter((r) => !r.ok);

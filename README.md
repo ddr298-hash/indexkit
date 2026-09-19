@@ -66,12 +66,41 @@ npm run diagnose -- your_blog_id
 npm run request-index -- your_blog_id
 ```
 
+## 안드로이드 앱 (Capacitor)
+
+폰에는 Node.js가 없어서 CLI를 그대로 담을 수 없기 때문에, 같은 로직(`src/lib/*`)을 브라우저에서
+동작하도록 재작성해 Next.js 정적 사이트로 빌드하고 Capacitor로 감쌌습니다. 서버가 없고 모든 API
+호출(네이버 글 목록, Google Custom Search, Google Indexing API)이 앱 내부에서 직접 일어납니다.
+
+- Google API 키/서비스 계정 키는 기기의 `localStorage`에만 저장됩니다 (서버 전송 없음). 다만
+  사이드로드용 APK이므로 디컴파일 시 값이 노출될 수 있음을 감안하세요 — 개인 전용 기기에만 설치하세요.
+- 설정 화면에서 **Google API 키를 여러 개 등록**할 수 있습니다. Custom Search API는 무료 티어가
+  키(프로젝트)당 하루 100건이라, 진단 중 한 키가 소진(429/쿼터 오류)되면 자동으로 다음 키로 넘어가
+  같은 요청을 이어서 처리합니다 (`src/lib/apiKeys.ts`).
+- `blog.naver.com`은 CORS 헤더를 보내지 않으므로, 일반 WebView `fetch`로는 요청이 막힙니다.
+  `capacitor.config.ts`에서 `CapacitorHttp` 플러그인을 켜서 네이티브 네트워킹으로 우회합니다.
+
+### 빌드
+
+```bash
+npm run build          # next build (output: "export" → out/ 생성)
+npx cap sync android    # out/ 를 android/app/src/main/assets/public 에 복사
+cd android
+./gradlew assembleDebug # → android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+APK는 서명되지 않은 디버그 빌드입니다. 설치 시 폰에서 "출처를 알 수 없는 앱" 설치를 허용해야 합니다.
+
 ## 폴더 구조
 
-- `scripts/diagnose.ts` — 진단 CLI
-- `scripts/request-index.ts` — 색인 요청 CLI
-- `src/lib/naver.ts` — 네이버 블로그 글 목록 크롤링
-- `src/lib/googleSearch.ts` — Custom Search API로 색인 상태 조회 + URL 정규화
-- `src/lib/googleIndexing.ts` — Google Indexing API 호출
-- `src/lib/report.ts` — 진단 보고서 저장/조회
-- `reports/` — 진단 결과 JSON (git 미포함)
+- `scripts/diagnose.ts` — 진단 CLI (데스크톱/Node용)
+- `scripts/request-index.ts` — 색인 요청 CLI (데스크톱/Node용)
+- `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (설정 + 진단 + 색인 요청)
+- `src/lib/naver.ts` — 네이버 블로그 글 목록 크롤링 (Node·브라우저 공용)
+- `src/lib/googleSearch.ts` — Custom Search API로 색인 상태 조회 + URL 정규화 (Node·브라우저 공용)
+- `src/lib/googleIndexing.ts` — Google Indexing API 호출, `jose`로 JWT 서명 (Node·브라우저 공용)
+- `src/lib/apiKeys.ts` — 앱 전용: 다중 API 키 등록/자동 로테이션 (`localStorage`)
+- `src/lib/storage.ts` — 앱 전용: 진단 보고서·설정 저장 (`localStorage`)
+- `src/lib/report.ts` — CLI 전용: 진단 보고서 파일 저장/조회
+- `reports/` — CLI 진단 결과 JSON (git 미포함)
+- `android/` — Capacitor 안드로이드 프로젝트 (빌드 산출물은 git 미포함)
