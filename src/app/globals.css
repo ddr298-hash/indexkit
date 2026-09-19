@@ -161,6 +161,14 @@ button:disabled {
   margin-bottom: 6px;
 }
 
+.linkHint {
+  display: block;
+  font-size: 12px;
+  color: #1a73e8;
+  text-decoration: underline;
+  margin-bottom: 6px;
+}
+
 .error {
   font-size: 13px;
   color: #d93025;

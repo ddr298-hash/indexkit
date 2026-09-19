@@ -180,6 +180,9 @@ export default function Home() {
           <div className="settingsBody">
             <div className="field">
               <label>Custom Search 엔진 ID (cx)</label>
+              <a className="linkHint" href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" rel="noopener noreferrer">
+                → 검색엔진 만들고 ID 발급받기 (programmablesearchengine.google.com)
+              </a>
               <div className="row">
                 <input value={cseId} onChange={(e) => setCseIdState(e.target.value)} placeholder="예: 017576662..." />
                 <button onClick={handleSaveCseId}>저장</button>
@@ -188,6 +191,9 @@ export default function Home() {
 
             <div className="field">
               <label>Google API 키 목록 (사용량 소진 시 자동으로 다음 키로 전환)</label>
+              <a className="linkHint" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
+                → API 키 발급받기 (console.cloud.google.com/apis/credentials, Custom Search API 활성화 필요)
+              </a>
               {apiKeys.length === 0 && <p className="hint">등록된 키가 없습니다.</p>}
               <ul className="keyList">
                 {apiKeys.map((k) => (
@@ -210,6 +216,14 @@ export default function Home() {
 
             <div className="field">
               <label>Google 서비스 계정 키 (JSON) — 색인 요청용</label>
+              <a
+                className="linkHint"
+                href="https://console.cloud.google.com/iam-admin/serviceaccounts"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                → 서비스 계정 만들고 키(JSON) 발급받기 (console.cloud.google.com/iam-admin/serviceaccounts)
+              </a>
               <p className="hint">{hasServiceAccount ? "✓ 등록됨" : "미등록"}</p>
               <textarea
                 value={saJson}
