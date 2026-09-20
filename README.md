@@ -14,6 +14,9 @@
 2. **`npm run request-index -- <블로그ID>`**
    - 가장 최근 진단 보고서에서 "누락" 상태인 글만 골라 Google Indexing API(`urlNotifications.publish`)로
      `URL_UPDATED` 색인 요청을 순차 전송
+   - ⚠️ Indexing API는 **프로젝트당 하루 200건**이 기본 할당량이며, 일반 웹사이트는 늘려주지 않습니다.
+     누락 글이 200개보다 많으면 그날은 200개까지만 요청되고 나머지는 건너뛰며(태평양시 자정에 초기화),
+     다음 날 다시 실행하면 이어서 처리됩니다.
 
 두 기능 모두 **같은 Google 서비스 계정 키 하나**로 동작합니다 (JWT 자체 서명 후 OAuth2 토큰 교환 — Node
 전용 `googleapis` 없이 `jose` + `fetch`만 사용해서 브라우저/앱에서도 동일하게 동작).

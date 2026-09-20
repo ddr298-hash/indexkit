@@ -365,9 +365,19 @@ export default function Home() {
               {indexing && <p className="progress">{indexProgress}</p>}
 
               {indexResults && (
-                <p className="hint">
-                  성공 {indexResults.filter((r) => r.ok).length} / 실패 {indexResults.filter((r) => !r.ok).length}
-                </p>
+                <>
+                  <p className="hint">
+                    성공 {indexResults.filter((r) => r.ok).length} / 실패{" "}
+                    {indexResults.filter((r) => !r.ok && !r.skipped).length} / 건너뜀{" "}
+                    {indexResults.filter((r) => r.skipped).length}
+                  </p>
+                  {indexResults.some((r) => r.skipped) && (
+                    <p className="error">
+                      오늘의 Google Indexing API 할당량(하루 200건)을 다 써서 나머지는 요청하지 않았습니다.
+                      태평양시 자정(한국시간 오후 5시경) 이후 초기화되니 그 뒤에 다시 시도해주세요.
+                    </p>
+                  )}
+                </>
               )}
 
               <ul className="postList">
