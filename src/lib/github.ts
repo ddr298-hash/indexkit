@@ -100,6 +100,14 @@ export async function enablePages(config: GithubConfig): Promise<string> {
   return data.html_url;
 }
 
+/** Read-only lookup of the Pages URL — returns null if Pages isn't enabled yet, without creating it. */
+export async function getPagesUrl(config: GithubConfig): Promise<string | null> {
+  const res = await githubRequest(`/repos/${config.owner}/${config.repo}/pages`, config);
+  if (!res.ok) return null;
+  const data = (await res.json()) as { html_url: string };
+  return data.html_url;
+}
+
 export async function getRepoVisibility(config: GithubConfig): Promise<"public" | "private"> {
   const res = await githubRequest(`/repos/${config.owner}/${config.repo}`, config);
   if (!res.ok) throw new Error(await readError(res, "저장소 정보 조회 실패"));

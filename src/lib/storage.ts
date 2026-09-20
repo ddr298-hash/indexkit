@@ -1,9 +1,45 @@
 import type { ServiceAccount } from "./googleIndexing";
 import type { GithubConfig } from "./github";
 
+export interface DiagnosisEntry {
+  logNo: string;
+  title: string;
+  addDate: string;
+  url: string;
+  indexed: boolean;
+}
+
+export interface DiagnosisReport {
+  blogId: string;
+  generatedAt: string;
+  totalPosts: number;
+  indexedCount: number;
+  missingCount: number;
+  entries: DiagnosisEntry[];
+  /**
+   * Set when the Search Console calls for this blog mostly failed with a
+   * permission error (service account not verified as owner) rather than
+   * genuinely returning "not indexed" — the indexed/missing counts above
+   * are NOT trustworthy when this is present. Expected for blog.naver.com
+   * itself (see README) — kept as an optional "try it anyway" feature.
+   */
+  verificationError?: string;
+}
+
+const REPORT_PREFIX = "indexkit.report.";
 const SERVICE_ACCOUNT_KEY = "indexkit.serviceAccount";
 const BLOG_IDS_KEY = "indexkit.blogIds";
 const GITHUB_CONFIG_KEY = "indexkit.githubConfig";
+
+export function saveReport(report: DiagnosisReport): void {
+  window.localStorage.setItem(`${REPORT_PREFIX}${report.blogId}`, JSON.stringify(report));
+}
+
+export function loadReport(blogId: string): DiagnosisReport | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(`${REPORT_PREFIX}${blogId}`);
+  return raw ? (JSON.parse(raw) as DiagnosisReport) : null;
+}
 
 export function getServiceAccount(): ServiceAccount | null {
   if (typeof window === "undefined") return null;
