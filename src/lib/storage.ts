@@ -1,44 +1,9 @@
 import type { ServiceAccount } from "./googleIndexing";
 import type { GithubConfig } from "./github";
 
-export interface DiagnosisEntry {
-  logNo: string;
-  title: string;
-  addDate: string;
-  url: string;
-  indexed: boolean;
-}
-
-export interface DiagnosisReport {
-  blogId: string;
-  generatedAt: string;
-  totalPosts: number;
-  indexedCount: number;
-  missingCount: number;
-  entries: DiagnosisEntry[];
-  /**
-   * Set when the Search Console calls for this blog mostly failed with a
-   * permission error (service account not verified as owner) rather than
-   * genuinely returning "not indexed" — the indexed/missing counts above
-   * are NOT trustworthy when this is present.
-   */
-  verificationError?: string;
-}
-
-const REPORT_PREFIX = "indexkit.report.";
 const SERVICE_ACCOUNT_KEY = "indexkit.serviceAccount";
-const LAST_BLOG_ID_KEY = "indexkit.lastBlogId";
 const BLOG_IDS_KEY = "indexkit.blogIds";
-
-export function saveReport(report: DiagnosisReport): void {
-  window.localStorage.setItem(`${REPORT_PREFIX}${report.blogId}`, JSON.stringify(report));
-}
-
-export function loadReport(blogId: string): DiagnosisReport | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(`${REPORT_PREFIX}${blogId}`);
-  return raw ? (JSON.parse(raw) as DiagnosisReport) : null;
-}
+const GITHUB_CONFIG_KEY = "indexkit.githubConfig";
 
 export function getServiceAccount(): ServiceAccount | null {
   if (typeof window === "undefined") return null;
@@ -73,15 +38,6 @@ export function clearServiceAccount(): void {
   window.localStorage.removeItem(SERVICE_ACCOUNT_KEY);
 }
 
-export function getLastBlogId(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(LAST_BLOG_ID_KEY) ?? "";
-}
-
-export function setLastBlogId(blogId: string): void {
-  window.localStorage.setItem(LAST_BLOG_ID_KEY, blogId);
-}
-
 export function getBlogIds(): string[] {
   if (typeof window === "undefined") return [];
   try {
@@ -109,8 +65,6 @@ export function removeBlogId(blogId: string): string[] {
   saveBlogIds(updated);
   return updated;
 }
-
-const GITHUB_CONFIG_KEY = "indexkit.githubConfig";
 
 export function getGithubConfig(): GithubConfig | null {
   if (typeof window === "undefined") return null;

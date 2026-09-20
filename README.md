@@ -128,16 +128,24 @@ npm run request-index -- your_blog_id
 
 ## 안드로이드 앱 (Capacitor)
 
-폰에는 Node.js가 없어서 CLI를 그대로 담을 수 없기 때문에, 같은 로직(`src/lib/*`)을 브라우저에서
-동작하도록 재작성해 Next.js 정적 사이트로 빌드하고 Capacitor로 감쌌습니다. 서버가 없고 모든 API
-호출(네이버 글 목록, Search Console, Indexing API)이 앱 내부에서 직접 일어납니다.
+Next.js 정적 사이트로 빌드해 Capacitor로 감쌌습니다. 서버가 없고, GitHub REST API 호출이 앱 내부에서
+직접 일어납니다. 앱은 **네이버 블로그를 직접 진단·색인 요청하지 않습니다** — 3단계에서 설명한 것처럼
+그 경로는 구조적으로 막혀 있어서, 앱은 오직 **허브 자동화 관리**(블로그 목록 등록 → GitHub 저장소
+설정 → 배포 트리거)에 집중합니다.
 
-- 서비스 계정 키는 기기의 `localStorage`에만 저장됩니다 (서버 전송 없음). 다만 사이드로드용 APK이므로
-  디컴파일 시 값이 노출될 수 있음을 감안하세요 — 개인 전용 기기에만 설치하세요.
-- `blog.naver.com`은 CORS 헤더를 보내지 않으므로, 일반 WebView `fetch`로는 요청이 막힙니다.
-  `capacitor.config.ts`에서 `CapacitorHttp` 플러그인을 켜서 네이티브 네트워킹으로 우회합니다.
-- URL Inspection API는 URL 하나당 호출 1번이라(하루 약 2,000건 한도), 글이 많은 블로그는 진단에
-  시간이 좀 걸립니다 (150ms 간격으로 순차 처리).
+앱 기능:
+- **📖 사용 가이드** — Google Cloud부터 Search Console 인증까지 전 과정을 앱 안에서 확인
+- **서비스 계정 등록** — 허브의 사이트맵 자동 제출용 (GitHub Secret으로 올라감)
+- **GitHub 연동 등록** — 저장소 소유자/이름/토큰 (토큰 발급 링크 제공)
+- **🚀 GitHub 자동 설정** — Pages 활성화, 저장소 변수(`HUB_DOMAIN`/`NAVER_BLOG_ID`)·시크릿 등록,
+  첫 배포까지 한 번에 실행 (시크릿은 `libsodium-wrappers`로 클라이언트에서 암호화 후 전송 —
+  GitHub API가 평문을 받지 않음)
+- **네이버 블로그 목록 관리 + 🔗 허브에 반영** — 블로그 추가/삭제 후 즉시 재배포 트리거
+
+- 서비스 계정 키·GitHub 토큰은 기기의 `localStorage`에만 저장됩니다 (서버 전송 없음). 다만
+  사이드로드용 APK이므로 디컴파일 시 값이 노출될 수 있음을 감안하세요 — 개인 전용 기기에만 설치하세요.
+- `blog.naver.com`처럼 CORS 헤더가 없는 도메인을 호출해야 할 일이 생기면 일반 WebView `fetch`가
+  막히므로, `capacitor.config.ts`에서 `CapacitorHttp` 플러그인을 켜서 네이티브 네트워킹으로 우회합니다.
 
 ### 빌드
 
@@ -159,13 +167,14 @@ APK는 서명되지 않은 디버그 빌드입니다. 설치 시 폰에서 "출�
 - `.github/workflows/hub.yml` — 허브 생성·배포·사이트맵 제출 자동화 (12시간 스케줄)
 - `hub-static/` — 매 생성 시 `generated-hub/`로 그대로 복사되는 고정 파일 (Search Console 인증 파일 등, git 커밋)
 - `generated-hub/` — `generate-hub` 실행 결과물 (git 미포함)
-- `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (설정 + 진단 + 색인 요청)
+- `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (가이드 + 설정 + 블로그 목록 + 허브 반영/자동 설정)
+- `src/lib/github.ts` — GitHub REST API 호출 (변수/시크릿 등록, Pages 활성화, 워크플로우 실행)
 - `src/lib/naver.ts` — 네이버 블로그 글 목록 크롤링 (Node·브라우저 공용)
 - `src/lib/googleAuth.ts` — 서비스 계정 키로 OAuth2 액세스 토큰 발급 (Node·브라우저 공용)
 - `src/lib/searchConsole.ts` — Search Console URL Inspection API로 색인 상태 조회 (Node·브라우저 공용)
 - `src/lib/googleIndexing.ts` — Google Indexing API 호출 (Node·브라우저 공용)
 - `src/lib/sitemap.ts` — Search Console 사이트맵 제출 API 호출
-- `src/lib/storage.ts` — 앱 전용: 진단 보고서·서비스 계정 저장 (`localStorage`)
+- `src/lib/storage.ts` — 앱 전용: 서비스 계정·블로그 목록·GitHub 연동 정보 저장 (`localStorage`)
 - `src/lib/report.ts` — CLI 전용: 진단 보고서 파일 저장/조회
 - `reports/` — CLI 진단 결과 JSON (git 미포함)
 - `android/` — Capacitor 안드로이드 프로젝트 (빌드 산출물은 git 미포함)
