@@ -6,24 +6,27 @@ export interface DiagnosisEntry {
   title: string;
   addDate: string;
   url: string;
-  indexed: boolean;
+  /** Rank of this post's own link in Naver's 통합검색 (view tab) when searching its exact title; -1 = missing. */
+  naverRank: number;
+  naverError?: string;
+  /**
+   * Rank of blog.naver.com/{blogId} in Google results for the same title
+   * search; -1 = missing, null = not checked. Only checked for posts
+   * already missing from Naver — that's the actual target audience for
+   * pushing into the hub, so there's no point spending a Google check on a
+   * post that's already visible on Naver's own search.
+   */
+  googleRank: number | null;
+  googleError?: string;
 }
 
 export interface DiagnosisReport {
   blogId: string;
   generatedAt: string;
   totalPosts: number;
-  indexedCount: number;
-  missingCount: number;
+  naverMissingCount: number;
+  googleMissingCount: number;
   entries: DiagnosisEntry[];
-  /**
-   * Set when the Search Console calls for this blog mostly failed with a
-   * permission error (service account not verified as owner) rather than
-   * genuinely returning "not indexed" — the indexed/missing counts above
-   * are NOT trustworthy when this is present. Expected for blog.naver.com
-   * itself (see README) — kept as an optional "try it anyway" feature.
-   */
-  verificationError?: string;
 }
 
 const REPORT_PREFIX = "indexkit.report.";

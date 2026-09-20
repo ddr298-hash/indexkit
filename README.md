@@ -129,23 +129,47 @@ npm run request-index -- your_blog_id
 ## 안드로이드 앱 (Capacitor)
 
 Next.js 정적 사이트로 빌드해 Capacitor로 감쌌습니다. 서버가 없고, GitHub REST API 호출이 앱 내부에서
-직접 일어납니다. 앱은 **네이버 블로그를 직접 진단·색인 요청하지 않습니다** — 3단계에서 설명한 것처럼
-그 경로는 구조적으로 막혀 있어서, 앱은 오직 **허브 자동화 관리**(블로그 목록 등록 → GitHub 저장소
-설정 → 배포 트리거)에 집중합니다.
+직접 일어납니다.
 
 앱 기능:
-- **📖 사용 가이드** — Google Cloud부터 Search Console 인증까지 전 과정을 앱 안에서 확인
+- **📖 사용 가이드** — 전 과정을 앱 안에서 확인
+- **진단("제목 검증")** — 아래 참고
 - **서비스 계정 등록** — 허브의 사이트맵 자동 제출용 (GitHub Secret으로 올라감)
 - **GitHub 연동 등록** — 저장소 소유자/이름/토큰 (토큰 발급 링크 제공)
 - **🚀 GitHub 자동 설정** — Pages 활성화, 저장소 변수(`HUB_DOMAIN`/`NAVER_BLOG_ID`)·시크릿 등록,
   첫 배포까지 한 번에 실행 (시크릿은 `libsodium-wrappers`로 클라이언트에서 암호화 후 전송 —
   GitHub API가 평문을 받지 않음)
 - **네이버 블로그 목록 관리 + 🔗 허브에 반영** — 블로그 추가/삭제 후 즉시 재배포 트리거
+- **📊 허브 색인 현황** — Search Console 사이트맵 API로 허브 페이지의 색인 수를 공식적으로 확인
 
 - 서비스 계정 키·GitHub 토큰은 기기의 `localStorage`에만 저장됩니다 (서버 전송 없음). 다만
   사이드로드용 APK이므로 디컴파일 시 값이 노출될 수 있음을 감안하세요 — 개인 전용 기기에만 설치하세요.
 - `blog.naver.com`처럼 CORS 헤더가 없는 도메인을 호출해야 할 일이 생기면 일반 WebView `fetch`가
   막히므로, `capacitor.config.ts`에서 `CapacitorHttp` 플러그인을 켜서 네이티브 네트워킹으로 우회합니다.
+
+### 진단 — "제목 검증" (API 인증 불필요)
+
+Search Console API로 blog.naver.com을 직접 진단하는 건 소유권 인증이 불가능해서 애초에 안 됩니다
+(위 3단계 참고). 대신 **글 제목을 그대로 따옴표로 감싸 검색해서, 결과 페이지에 내 블로그 링크가
+뜨는지 직접 확인**합니다 — 별도의 다른 프로젝트("keyword" 저장소)에서 이미 검증된 방식을 그대로
+이식했습니다.
+
+- **네이버**: 모든 글에 대해 `search.naver.com/search.naver?where=view`로 제목을 검색해 통합검색
+  노출 여부(및 순위)를 확인
+- **구글**: 네이버에서 이미 누락으로 확인된 글만 `google.com/search`로 같은 방식 확인 (이미 네이버에서
+  잘 노출되는 글까지 구글을 확인할 필요는 없다는 판단, 시간도 절약)
+
+동작 원리: 검색 결과 페이지는 일부가 JS로 렌더링되기 때문에 단순 HTTP GET + HTML 파싱으로는 링크를
+못 찾는 경우가 있습니다. 그래서 **숨겨진 안드로이드 네이티브 `WebView`에서 실제로 페이지를 로드하고,
+`evaluateJavascript`로 렌더링된 DOM에서 직접 링크를 찾는** 작은 Capacitor 플러그인
+(`RankCheckerPlugin.java`)을 만들어 씁니다 — Capacitor의 메인 웹뷰 안에서 `<iframe>`으로 시도하면
+크로스오리진 정책 때문에 내부 DOM을 못 읽어서, 별도의 네이티브 `WebView` 인스턴스를 직접 제어하는
+방식을 씁니다.
+
+> **주의**: 공식 API가 아니라 검색 결과 페이지를 스크레이핑하는 방식이라, 지나치게 자주/대량으로
+> 돌리면 검색엔진이 비정상 트래픽으로 보고 일시적으로 캡차를 띄우거나 제한할 수 있습니다. 글 하나당
+> 수 초가 걸리도록 일부러 느리게(요청 사이 딜레이) 설계되어 있습니다 — 개인 블로그 진단 용도를
+> 벗어나는 대량·반복 사용은 피하세요.
 
 ### 빌드
 
@@ -167,13 +191,16 @@ APK는 서명되지 않은 디버그 빌드입니다. 설치 시 폰에서 "출�
 - `.github/workflows/hub.yml` — 허브 생성·배포·사이트맵 제출 자동화 (12시간 스케줄)
 - `hub-static/` — 매 생성 시 `generated-hub/`로 그대로 복사되는 고정 파일 (Search Console 인증 파일 등, git 커밋)
 - `generated-hub/` — `generate-hub` 실행 결과물 (git 미포함)
-- `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (가이드 + 설정 + 블로그 목록 + 허브 반영/자동 설정)
+- `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (가이드 + 진단 + 설정 + 블로그 목록 + 허브 반영/자동 설정)
+- `src/lib/rankChecker.ts` — 앱 전용: 네이티브 `RankChecker` 플러그인 호출 (제목 검증 진단)
+- `android/app/src/main/java/kr/indexkit/app/RankCheckerPlugin.java` — 네이티브 WebView로 검색 결과
+  페이지를 렌더링해 링크 순위를 읽는 Capacitor 플러그인 (keyword 저장소의 `NaverRankChecker.kt` 이식)
 - `src/lib/github.ts` — GitHub REST API 호출 (변수/시크릿 등록, Pages 활성화, 워크플로우 실행)
 - `src/lib/naver.ts` — 네이버 블로그 글 목록 크롤링 (Node·브라우저 공용)
 - `src/lib/googleAuth.ts` — 서비스 계정 키로 OAuth2 액세스 토큰 발급 (Node·브라우저 공용)
-- `src/lib/searchConsole.ts` — Search Console URL Inspection API로 색인 상태 조회 (Node·브라우저 공용)
+- `src/lib/searchConsole.ts` — Search Console URL Inspection API로 색인 상태 조회 (CLI 전용, Node·브라우저 공용 코드)
 - `src/lib/googleIndexing.ts` — Google Indexing API 호출 (Node·브라우저 공용)
-- `src/lib/sitemap.ts` — Search Console 사이트맵 제출 API 호출
+- `src/lib/sitemap.ts` — Search Console 사이트맵 제출/조회 API 호출
 - `src/lib/storage.ts` — 앱 전용: 서비스 계정·블로그 목록·GitHub 연동 정보 저장 (`localStorage`)
 - `src/lib/report.ts` — CLI 전용: 진단 보고서 파일 저장/조회
 - `reports/` — CLI 진단 결과 JSON (git 미포함)

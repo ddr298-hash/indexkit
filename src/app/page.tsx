@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
-import { inspectUrlsBatch } from "@/lib/searchConsole";
+import { checkGoogleRank, checkNaverRank, type RankCheckResult } from "@/lib/rankChecker";
 import { getSitemapStatus, type SitemapStatus } from "@/lib/sitemap";
 import {
   enablePages,
@@ -30,11 +30,7 @@ import {
 const TOKEN_CREATE_URL =
   "https://github.com/settings/tokens/new?scopes=repo,workflow&description=indexkit-app";
 
-function siteUrlFor(blogId: string): string {
-  return `https://blog.naver.com/${blogId}/`;
-}
-
-type Summary = Pick<DiagnosisReport, "totalPosts" | "indexedCount" | "missingCount" | "verificationError">;
+type Summary = Pick<DiagnosisReport, "totalPosts" | "naverMissingCount" | "googleMissingCount">;
 
 interface GuideCallout {
   kind: "warn" | "ok";
@@ -51,13 +47,12 @@ interface GuideSection {
 
 const GUIDE_SECTIONS: GuideSection[] = [
   {
-    title: "왜 \"허브\" 방식인가요?",
+    title: "진단은 어떻게 동작하나요?",
     intro:
-      "네이버 블로그(blog.naver.com)는 DNS도, <head> 태그도, 정적 파일 업로드도 통제할 수 없어 " +
-      "구글 Search Console 소유권 인증이 사실상 불가능합니다. 그래서 본인이 소유한 GitHub Pages " +
-      "사이트를 \"허브\"로 만들어, 거기서 네이버 원문으로 링크를 걸어 구글봇이 따라오게 유도합니다. " +
-      "아래 \"진단\" 버튼은 네이버 블로그를 직접 확인해보는 보너스 기능이라 대부분 실패해도 정상입니다 — " +
-      "실제 색인 현황은 \"허브 색인 현황\"으로 확인하세요.",
+      "글 제목을 그대로 따옴표로 감싸 검색해서, 결과 페이지에 내 블로그 링크가 뜨는지 직접 확인합니다 " +
+      "(API 인증 불필요). 먼저 네이버 통합검색에서 확인하고, 거기서 누락된 글만 골라 구글 검색까지 " +
+      "확인합니다 — 네이버에서도 잘 노출되는 글은 굳이 구글까지 확인할 필요가 없다는 판단입니다. " +
+      "네이버에서 누락된 글은 \"허브\"(아래 3단계)에 링크로 올려 구글이 발견하도록 유도합니다.",
   },
   {
     title: "1단계 · Google Cloud 프로젝트 준비",
@@ -114,10 +109,16 @@ const GUIDE_SECTIONS: GuideSection[] = [
   {
     title: "5단계 · 블로그 등록하고 계속 운영하기",
     steps: [
-      "\"네이버 블로그 목록\"에서 블로그 추가",
+      "\"네이버 블로그 목록\"에서 블로그 추가 → \"진단\" 클릭 (설정 없이 바로 동작)",
       "\"🔗 허브에 반영\" 버튼으로 언제든 즉시 재배포 (안 눌러도 12시간마다 자동 실행됨)",
       "\"📊 허브 색인 현황\"으로 구글이 허브 페이지를 몇 개나 색인했는지 공식 API로 확인 가능",
     ],
+    callout: {
+      kind: "warn",
+      title: "진단은 시간이 꽤 걸립니다",
+      body: "글 하나마다 검색 페이지를 실제로 열어서 확인하는 방식이라 글 1개당 수 초씩 걸립니다. " +
+        "글이 많은 블로그는 전체 진단에 몇 분~수십 분이 걸릴 수 있어요.",
+    },
   },
 ];
 
@@ -350,41 +351,50 @@ export default function Home() {
     setReport(loadReport(id));
   }
 
-  async function diagnoseOne(blogId: string, sa: NonNullable<ReturnType<typeof getServiceAccount>>) {
+  /**
+   * "제목 검증" 방식 — API 인증 없이, 글 제목을 그대로 검색해서 결과 페이지에 내 링크가
+   * 뜨는지 직접 확인한다. 네이버에서 이미 노출되는 글은 구글까지 확인할 필요가 없다는
+   * 판단으로, 네이버에서 누락된 글만 구글도 확인한다.
+   */
+  async function diagnoseOne(blogId: string) {
     const posts = await fetchAllNaverPosts(blogId);
-    const siteUrl = siteUrlFor(blogId);
-    const urls = posts.map((p) => naverPostUrl(blogId, p.logNo));
+    const entries: DiagnosisEntry[] = [];
 
-    const inspections = await inspectUrlsBatch(urls, siteUrl, sa, 150, (_result, done, total) =>
-      setProgress(`"${blogId}" 구글 색인 상태 확인 중... (${done}/${total})`),
-    );
+    for (let i = 0; i < posts.length; i++) {
+      const p = posts[i];
+      setProgress(`"${blogId}" 검색 노출 확인 중... (${i + 1}/${posts.length})`);
 
-    const entries: DiagnosisEntry[] = posts.map((p, i) => ({
-      logNo: p.logNo,
-      title: p.title,
-      addDate: p.addDate,
-      url: urls[i],
-      indexed: inspections[i].indexed,
-    }));
+      const naver = await checkNaverRank(p.title, blogId);
+      await new Promise((r) => setTimeout(r, 400));
 
-    // If most calls were rejected as permission-denied, the service account
-    // almost certainly isn't verified as an owner for this blog's Search
-    // Console property — expected for blog.naver.com (see guide). Checked
-    // via the HTTP status Google actually returned, not by guessing at the
-    // wording of the error message.
-    const permissionErrors = inspections.filter((r) => r.permissionDenied);
-    const verificationError =
-      permissionErrors.length > inspections.length / 2 ? permissionErrors[0].error : undefined;
+      let google: RankCheckResult | null = null;
+      if (naver.rank <= 0) {
+        google = await checkGoogleRank(p.title, blogId);
+        await new Promise((r) => setTimeout(r, 400));
+      }
 
-    const indexedCount = entries.filter((e) => e.indexed).length;
+      entries.push({
+        logNo: p.logNo,
+        title: p.title,
+        addDate: p.addDate,
+        url: naverPostUrl(blogId, p.logNo),
+        naverRank: naver.rank,
+        naverError: naver.error,
+        googleRank: google ? google.rank : null,
+        googleError: google?.error,
+      });
+    }
+
+    const naverMissingCount = entries.filter((e) => e.naverRank <= 0).length;
+    const googleMissingCount = entries.filter((e) => e.googleRank !== null && e.googleRank <= 0).length;
+
     const newReport: DiagnosisReport = {
       blogId,
       generatedAt: new Date().toISOString(),
       totalPosts: entries.length,
-      indexedCount,
-      missingCount: entries.length - indexedCount,
+      naverMissingCount,
+      googleMissingCount,
       entries,
-      verificationError,
     };
 
     saveReport(newReport);
@@ -393,18 +403,12 @@ export default function Home() {
   }
 
   async function handleDiagnose(blogId: string) {
-    const sa = getServiceAccount();
-    if (!sa) {
-      setError("설정에서 Google 서비스 계정 키(JSON)를 먼저 등록해주세요.");
-      return;
-    }
-
     setError(null);
     setDiagnosingBlogId(blogId);
 
     try {
       setProgress(`"${blogId}" 블로그 글 목록 수집 중...`);
-      const newReport = await diagnoseOne(blogId, sa);
+      const newReport = await diagnoseOne(blogId);
       handleSelectBlog(blogId);
       setReport(newReport);
     } catch (err) {
@@ -416,11 +420,6 @@ export default function Home() {
   }
 
   async function handleDiagnoseAll() {
-    const sa = getServiceAccount();
-    if (!sa) {
-      setError("설정에서 Google 서비스 계정 키(JSON)를 먼저 등록해주세요.");
-      return;
-    }
     if (blogIds.length === 0) return;
 
     setError(null);
@@ -431,7 +430,7 @@ export default function Home() {
       setDiagnosingBlogId(blogId);
       try {
         setProgress(`[${i + 1}/${blogIds.length}] "${blogId}" 글 목록 수집 중...`);
-        await diagnoseOne(blogId, sa);
+        await diagnoseOne(blogId);
       } catch (err) {
         setError(`"${blogId}" 진단 실패: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -443,7 +442,7 @@ export default function Home() {
     if (selectedBlogId) setReport(loadReport(selectedBlogId));
   }
 
-  const missingEntries = report?.entries.filter((e) => !e.indexed) ?? [];
+  const naverMissingEntries = report?.entries.filter((e) => e.naverRank <= 0) ?? [];
   const anyDiagnosing = diagnosingBlogId !== null;
 
   return (
@@ -499,7 +498,7 @@ export default function Home() {
         {settingsOpen && (
           <div className="settingsBody">
             <div className="field">
-              <label>Google 서비스 계정 키 (JSON) — 진단 &amp; 허브 사이트맵 자동 제출 공용</label>
+              <label>Google 서비스 계정 키 (JSON) — 허브 사이트맵 자동 제출용</label>
               <a
                 className="linkHint"
                 href="https://console.cloud.google.com/iam-admin/serviceaccounts"
@@ -607,14 +606,11 @@ export default function Home() {
                 >
                   {id}
                 </button>
-                {s &&
-                  (s.verificationError ? (
-                    <span className="badge badgeWarn">인증 필요</span>
-                  ) : (
-                    <span className={s.missingCount > 0 ? "badge badgeWarn" : "badge badgeOk"}>
-                      {s.indexedCount}/{s.totalPosts}
-                    </span>
-                  ))}
+                {s && (
+                  <span className={s.naverMissingCount > 0 ? "badge badgeWarn" : "badge badgeOk"}>
+                    네이버 누락 {s.naverMissingCount} · 구글 누락 {s.googleMissingCount}
+                  </span>
+                )}
                 <button onClick={() => handleDiagnose(id)} disabled={anyDiagnosing || diagnosingAll}>
                   {isDiagnosingThis ? "진단 중..." : "진단"}
                 </button>
@@ -694,26 +690,10 @@ export default function Home() {
       {report && (
         <section className="card">
           <h2>&quot;{report.blogId}&quot; 진단 결과</h2>
-
-          {report.verificationError && (
-            <p className="error" style={{ marginBottom: 12 }}>
-              ⚠️ Search Console 인증이 안 되어 있어 아래 숫자를 믿을 수 없습니다 (호출이 전부 실패해서
-              "미색인"으로 표시된 것일 뿐입니다 — 네이버 블로그라면 정상입니다). 이 서비스 계정을{" "}
-              <a
-                className="linkHint"
-                style={{ display: "inline" }}
-                href="https://search.google.com/search-console"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Search Console
-              </a>
-              에서 <code>https://blog.naver.com/{report.blogId}/</code> 속성의 소유자로 등록한 뒤 다시
-              진단해주세요.
-              <br />
-              <span className="hint">실제 오류: {report.verificationError}</span>
-            </p>
-          )}
+          <p className="hint" style={{ marginBottom: 10 }}>
+            제목을 그대로 검색해서 결과에 내 링크가 뜨는지 직접 확인한 결과입니다 (네이버는 전체 글,
+            구글은 네이버에서 누락된 글만 확인).
+          </p>
 
           <div className="statRow">
             <div className="stat">
@@ -721,21 +701,35 @@ export default function Home() {
               <span className="statLabel">전체 글</span>
             </div>
             <div className="stat">
-              <span className="statNum statOk">{report.indexedCount}</span>
-              <span className="statLabel">색인됨</span>
+              <span className="statNum statWarn">{report.naverMissingCount}</span>
+              <span className="statLabel">네이버 누락</span>
             </div>
             <div className="stat">
-              <span className="statNum statWarn">{report.missingCount}</span>
-              <span className="statLabel">누락</span>
+              <span className="statNum statWarn">{report.googleMissingCount}</span>
+              <span className="statLabel">구글도 누락</span>
             </div>
           </div>
 
-          {report.missingCount > 0 && (
+          {naverMissingEntries.length > 0 && (
             <ul className="postList">
-              {missingEntries.map((e) => (
+              {naverMissingEntries.map((e) => (
                 <li key={e.logNo} className="postItem">
                   <div className="postTitle">{e.title}</div>
-                  <div className="postMeta">{e.addDate}</div>
+                  <div className="postMeta">
+                    {e.addDate}
+                    <span className="badge badgeWarn">
+                      {e.naverError ? `네이버 오류: ${e.naverError}` : "네이버 누락"}
+                    </span>
+                    {e.googleRank !== null && (
+                      <span className={e.googleRank > 0 ? "badge badgeOk" : "badge badgeWarn"}>
+                        {e.googleError
+                          ? `구글 오류: ${e.googleError}`
+                          : e.googleRank > 0
+                            ? `구글 ${e.googleRank}위`
+                            : "구글도 누락"}
+                      </span>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
