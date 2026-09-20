@@ -54,6 +54,42 @@ Search Console URL Inspection API와 Indexing API 둘 다 **소유권이 확인�
 않습니다. 또한 Indexing API는 공식적으로는 채용공고/라이브방송 페이지 전용이라 일반 블로그 글에 대한
 색인 반영은 보장되지 않습니다 — 어디까지나 구글에 크롤링을 요청하는 신호일 뿐입니다.
 
+## 검색 발견용 허브 (소유권 인증 없이 발견 가능성 높이기)
+
+Search Console 소유권 인증이 네이버 블로그 구조상 막힐 수 있다는 한계를 우회하는 방법입니다. 본인이
+**실제로 소유한 도메인**(GitHub Pages, Vercel 등)에 네이버 원문 링크 모음 페이지를 배포해서, 그 도메인은
+정상적으로 소유권 인증을 하고 구글이 사이트맵/RSS를 통해 네이버 원문 URL을 발견하도록 유도합니다. 원문
+내용을 복제하지 않고 제목·발행일·링크만 제공하므로 네이버 원문과 중복 콘텐츠가 되지 않습니다.
+
+```bash
+npm run generate-hub -- 내블로그ID https://내가-소유한-도메인.example
+```
+
+`generated-hub/`에 `index.html`, `posts/<logNo>.html`(글마다 1개), `sitemap.xml`, `rss.xml`, `robots.txt`가
+생성됩니다. 이 폴더를 원하는 정적 호스팅에 배포한 뒤, 그 도메인을 Search Console에 등록(정상적인 DNS/HTML
+인증 — 본인 도메인이라 문제없이 됩니다)하고 서비스 계정을 소유자로 추가하면:
+
+```bash
+npm run submit-sitemap -- https://내도메인.example/ https://내도메인.example/sitemap.xml
+```
+
+으로 사이트맵을 즉시 제출할 수 있습니다. 어디까지나 구글이 원문 URL을 "발견"할 확률을 높이는 것이며,
+네이버 원문 자체의 색인을 보장하지 않습니다.
+
+### GitHub Actions로 자동화
+
+`.github/workflows/hub.yml`이 매일 자동으로: 글 목록 재수집 → 허브 재생성 → **GitHub Pages 배포** →
+사이트맵 자동 제출까지 실행합니다. 사용하려면 저장소에서:
+
+1. **Settings → Pages → Source**를 "GitHub Actions"로 설정
+2. **Settings → Secrets and variables → Actions → Variables**에 추가:
+   - `NAVER_BLOG_ID` = 본인 블로그 ID
+   - `HUB_DOMAIN` = GitHub Pages 주소 (예: `https://ddr298-hash.github.io/indexkit`)
+3. 같은 화면의 **Secrets** 탭에 추가:
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` = 서비스 계정 키 JSON 파일 내용 전체
+4. Actions 탭에서 "Generate & publish discovery hub" 워크플로우를 한 번 수동 실행(`Run workflow`)해서
+   확인 — 이후로는 매일 자동 실행됩니다.
+
 ## 설치 및 실행
 
 ```bash
@@ -91,11 +127,15 @@ APK는 서명되지 않은 디버그 빌드입니다. 설치 시 폰에서 "출�
 
 - `scripts/diagnose.ts` — 진단 CLI (데스크톱/Node용)
 - `scripts/request-index.ts` — 색인 요청 CLI (데스크톱/Node용)
+- `scripts/generate-hub.ts` — 검색 발견용 허브(정적 사이트) 생성 CLI
+- `scripts/submit-sitemap.ts` — 생성된 사이트맵을 Search Console에 제출하는 CLI
+- `.github/workflows/hub.yml` — 허브 생성·배포·사이트맵 제출 자동화 (매일 스케줄)
 - `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (설정 + 진단 + 색인 요청)
 - `src/lib/naver.ts` — 네이버 블로그 글 목록 크롤링 (Node·브라우저 공용)
 - `src/lib/googleAuth.ts` — 서비스 계정 키로 OAuth2 액세스 토큰 발급 (Node·브라우저 공용)
 - `src/lib/searchConsole.ts` — Search Console URL Inspection API로 색인 상태 조회 (Node·브라우저 공용)
 - `src/lib/googleIndexing.ts` — Google Indexing API 호출 (Node·브라우저 공용)
+- `src/lib/sitemap.ts` — Search Console 사이트맵 제출 API 호출
 - `src/lib/storage.ts` — 앱 전용: 진단 보고서·서비스 계정 저장 (`localStorage`)
 - `src/lib/report.ts` — CLI 전용: 진단 보고서 파일 저장/조회
 - `reports/` — CLI 진단 결과 JSON (git 미포함)

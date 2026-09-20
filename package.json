@@ -9,6 +9,8 @@
     "lint": "eslint",
     "diagnose": "tsx scripts/diagnose.ts",
     "request-index": "tsx scripts/request-index.ts",
+    "generate-hub": "tsx scripts/generate-hub.ts",
+    "submit-sitemap": "tsx scripts/submit-sitemap.ts",
     "cap:sync": "next build && npx cap sync android",
     "android:build": "npm run cap:sync && cd android && gradlew.bat assembleDebug"
   },

@@ -39,6 +39,7 @@ yarn-error.log*
 
 # indexkit
 /reports/
+/generated-hub/
 *service-account*.json
 google-credentials.json
 
