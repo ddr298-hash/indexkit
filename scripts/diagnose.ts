@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { fetchAllNaverPosts, naverPostUrl } from "../src/lib/naver";
-import { inspectUrlsBatch, isPermissionError } from "../src/lib/searchConsole";
+import { inspectUrlsBatch } from "../src/lib/searchConsole";
 import { saveReport, type DiagnosisEntry } from "../src/lib/report";
 import type { ServiceAccount } from "../src/lib/googleIndexing";
 
@@ -49,7 +49,7 @@ async function main() {
     indexed: inspections[i].indexed,
   }));
 
-  const permissionErrors = inspections.filter((r) => r.error && isPermissionError(r.error));
+  const permissionErrors = inspections.filter((r) => r.permissionDenied);
   const verificationError =
     permissionErrors.length > inspections.length / 2 ? permissionErrors[0].error : undefined;
 

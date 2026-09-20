@@ -5,18 +5,37 @@ export interface InspectionResult {
   indexed: boolean;
   verdict?: string;
   error?: string;
+  /** True when the call failed specifically because the service account isn't a verified owner. */
+  permissionDenied?: boolean;
 }
 
 const INSPECT_ENDPOINT = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect";
 const SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 
 /**
- * True when the API rejected the call because the service account isn't a
- * verified owner of the Search Console property (as opposed to some other
- * transient failure). This is the single biggest failure mode for this
- * project — a whole batch of these looks identical to "genuinely not
- * indexed" unless callers check for it explicitly.
+ * Google's API error responses carry the real signal in the HTTP status
+ * (403) and the `status` field ("PERMISSION_DENIED") — the human-readable
+ * `message` text isn't guaranteed to contain any particular wording, so
+ * matching on it (as an earlier version of this file did) silently missed
+ * real permission failures and let them masquerade as "not indexed".
  */
+class SearchConsoleError extends Error {
+  status: number;
+  reason?: string;
+
+  constructor(message: string, status: number, reason?: string) {
+    super(message);
+    this.name = "SearchConsoleError";
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+function isPermissionDenied(err: unknown): boolean {
+  return err instanceof SearchConsoleError && (err.status === 403 || err.reason === "PERMISSION_DENIED");
+}
+
+/** Kept for any external callers that only have the error message string. */
 export function isPermissionError(message: string): boolean {
   const m = message.toLowerCase();
   return m.includes("permission") || m.includes("forbidden") || m.includes("does not have sufficient");
@@ -45,12 +64,17 @@ export async function inspectUrl(url: string, siteUrl: string, sa: ServiceAccoun
     });
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error?.message || res.statusText);
+      throw new SearchConsoleError(data.error?.message || res.statusText, res.status, data.error?.status);
     }
     const verdict = data.inspectionResult?.indexStatusResult?.verdict as string | undefined;
     return { url, indexed: verdict === "PASS", verdict };
   } catch (err) {
-    return { url, indexed: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      url,
+      indexed: false,
+      error: err instanceof Error ? err.message : String(err),
+      permissionDenied: isPermissionDenied(err),
+    };
   }
 }
 

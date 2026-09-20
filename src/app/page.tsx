@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
-import { inspectUrlsBatch, isPermissionError } from "@/lib/searchConsole";
+import { inspectUrlsBatch } from "@/lib/searchConsole";
 import { getSitemapStatus, type SitemapStatus } from "@/lib/sitemap";
 import {
   enablePages,
@@ -367,10 +367,12 @@ export default function Home() {
       indexed: inspections[i].indexed,
     }));
 
-    // If most calls failed with a permission error, the service account
+    // If most calls were rejected as permission-denied, the service account
     // almost certainly isn't verified as an owner for this blog's Search
-    // Console property — expected for blog.naver.com (see guide).
-    const permissionErrors = inspections.filter((r) => r.error && isPermissionError(r.error));
+    // Console property — expected for blog.naver.com (see guide). Checked
+    // via the HTTP status Google actually returned, not by guessing at the
+    // wording of the error message.
+    const permissionErrors = inspections.filter((r) => r.permissionDenied);
     const verificationError =
       permissionErrors.length > inspections.length / 2 ? permissionErrors[0].error : undefined;
 
