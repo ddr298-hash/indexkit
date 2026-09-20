@@ -2,7 +2,7 @@ name: Generate & publish discovery hub
 
 on:
   schedule:
-    - cron: "0 * * * *" # 매시 정각
+    - cron: "0 */12 * * *" # 12시간마다
   workflow_dispatch: {}
 
 permissions:

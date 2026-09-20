@@ -5,9 +5,12 @@ import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
 import { inspectUrlsBatch } from "@/lib/searchConsole";
 import { requestIndexingBatch, type IndexRequestResult } from "@/lib/googleIndexing";
 import {
+  addBlogId,
+  getBlogIds,
   getLastBlogId,
   getServiceAccount,
   loadReport,
+  removeBlogId,
   saveReport,
   setLastBlogId,
   setServiceAccount,
@@ -19,17 +22,24 @@ function siteUrlFor(blogId: string): string {
   return `https://blog.naver.com/${blogId}/`;
 }
 
+type Summary = Pick<DiagnosisReport, "totalPosts" | "indexedCount" | "missingCount">;
+
 export default function Home() {
   const [saJson, setSaJson] = useState("");
   const [hasServiceAccount, setHasServiceAccount] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [blogId, setBlogId] = useState("");
-  const [diagnosing, setDiagnosing] = useState(false);
+  const [blogIds, setBlogIds] = useState<string[]>([]);
+  const [newBlogId, setNewBlogId] = useState("");
+  const [summaries, setSummaries] = useState<Record<string, Summary>>({});
+  const [selectedBlogId, setSelectedBlogId] = useState<string>("");
+  const [report, setReport] = useState<DiagnosisReport | null>(null);
+
+  const [diagnosingBlogId, setDiagnosingBlogId] = useState<string | null>(null);
+  const [diagnosingAll, setDiagnosingAll] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<DiagnosisReport | null>(null);
 
   const [indexing, setIndexing] = useState(false);
   const [indexResults, setIndexResults] = useState<IndexRequestResult[] | null>(null);
@@ -37,9 +47,20 @@ export default function Home() {
 
   useEffect(() => {
     setHasServiceAccount(!!getServiceAccount());
+
+    const ids = getBlogIds();
+    setBlogIds(ids);
+
+    const nextSummaries: Record<string, Summary> = {};
+    for (const id of ids) {
+      const saved = loadReport(id);
+      if (saved) nextSummaries[id] = saved;
+    }
+    setSummaries(nextSummaries);
+
     const lastBlogId = getLastBlogId();
-    setBlogId(lastBlogId);
-    if (lastBlogId) {
+    if (lastBlogId && ids.includes(lastBlogId)) {
+      setSelectedBlogId(lastBlogId);
       const saved = loadReport(lastBlogId);
       if (saved) setReport(saved);
     }
@@ -56,14 +77,67 @@ export default function Home() {
     setHasServiceAccount(true);
   }
 
-  async function handleDiagnose() {
-    const trimmedBlogId = extractBlogId(blogId);
-    if (!trimmedBlogId) {
-      setError("블로그 ID를 입력해주세요.");
-      return;
-    }
-    setBlogId(trimmedBlogId);
+  function handleAddBlog() {
+    const id = extractBlogId(newBlogId);
+    if (!id) return;
+    setBlogIds(addBlogId(id));
+    setNewBlogId("");
+    handleSelectBlog(id);
+  }
 
+  function handleRemoveBlog(id: string) {
+    setBlogIds(removeBlogId(id));
+    setSummaries((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (selectedBlogId === id) {
+      setSelectedBlogId("");
+      setReport(null);
+    }
+  }
+
+  function handleSelectBlog(id: string) {
+    setSelectedBlogId(id);
+    setLastBlogId(id);
+    setIndexResults(null);
+    setReport(loadReport(id));
+  }
+
+  async function diagnoseOne(blogId: string, sa: NonNullable<ReturnType<typeof getServiceAccount>>) {
+    const posts = await fetchAllNaverPosts(blogId);
+    const siteUrl = siteUrlFor(blogId);
+    const urls = posts.map((p) => naverPostUrl(blogId, p.logNo));
+
+    const inspections = await inspectUrlsBatch(urls, siteUrl, sa, 150, (_result, done, total) =>
+      setProgress(`"${blogId}" 구글 색인 상태 확인 중... (${done}/${total})`),
+    );
+
+    const entries: DiagnosisEntry[] = posts.map((p, i) => ({
+      logNo: p.logNo,
+      title: p.title,
+      addDate: p.addDate,
+      url: urls[i],
+      indexed: inspections[i].indexed,
+    }));
+
+    const indexedCount = entries.filter((e) => e.indexed).length;
+    const newReport: DiagnosisReport = {
+      blogId,
+      generatedAt: new Date().toISOString(),
+      totalPosts: entries.length,
+      indexedCount,
+      missingCount: entries.length - indexedCount,
+      entries,
+    };
+
+    saveReport(newReport);
+    setSummaries((prev) => ({ ...prev, [blogId]: newReport }));
+    return newReport;
+  }
+
+  async function handleDiagnose(blogId: string) {
     const sa = getServiceAccount();
     if (!sa) {
       setError("설정에서 Google 서비스 계정 키(JSON)를 먼저 등록해주세요.");
@@ -71,49 +145,49 @@ export default function Home() {
     }
 
     setError(null);
-    setDiagnosing(true);
+    setDiagnosingBlogId(blogId);
     setIndexResults(null);
-    setReport(null);
 
     try {
-      setProgress(`"${trimmedBlogId}" 블로그 글 목록 수집 중...`);
-      const posts = await fetchAllNaverPosts(trimmedBlogId);
-
-      const siteUrl = siteUrlFor(trimmedBlogId);
-      const urls = posts.map((p) => naverPostUrl(trimmedBlogId, p.logNo));
-
-      const inspections = await inspectUrlsBatch(urls, siteUrl, sa, 150, (_result, done, total) =>
-        setProgress(`구글 색인 상태 확인 중... (${done}/${total})`),
-      );
-
-      setProgress("결과 정리 중...");
-      const entries: DiagnosisEntry[] = posts.map((p, i) => ({
-        logNo: p.logNo,
-        title: p.title,
-        addDate: p.addDate,
-        url: urls[i],
-        indexed: inspections[i].indexed,
-      }));
-
-      const indexedCount = entries.filter((e) => e.indexed).length;
-      const newReport: DiagnosisReport = {
-        blogId: trimmedBlogId,
-        generatedAt: new Date().toISOString(),
-        totalPosts: entries.length,
-        indexedCount,
-        missingCount: entries.length - indexedCount,
-        entries,
-      };
-
-      saveReport(newReport);
-      setLastBlogId(trimmedBlogId);
+      setProgress(`"${blogId}" 블로그 글 목록 수집 중...`);
+      const newReport = await diagnoseOne(blogId, sa);
+      handleSelectBlog(blogId);
       setReport(newReport);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(`"${blogId}" 진단 실패: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setDiagnosing(false);
+      setDiagnosingBlogId(null);
       setProgress("");
     }
+  }
+
+  async function handleDiagnoseAll() {
+    const sa = getServiceAccount();
+    if (!sa) {
+      setError("설정에서 Google 서비스 계정 키(JSON)를 먼저 등록해주세요.");
+      return;
+    }
+    if (blogIds.length === 0) return;
+
+    setError(null);
+    setDiagnosingAll(true);
+    setIndexResults(null);
+
+    for (let i = 0; i < blogIds.length; i++) {
+      const blogId = blogIds[i];
+      setDiagnosingBlogId(blogId);
+      try {
+        setProgress(`[${i + 1}/${blogIds.length}] "${blogId}" 글 목록 수집 중...`);
+        await diagnoseOne(blogId, sa);
+      } catch (err) {
+        setError(`"${blogId}" 진단 실패: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    setDiagnosingBlogId(null);
+    setDiagnosingAll(false);
+    setProgress("");
+    if (selectedBlogId) setReport(loadReport(selectedBlogId));
   }
 
   async function handleRequestIndex() {
@@ -147,6 +221,7 @@ export default function Home() {
   }
 
   const missingEntries = report?.entries.filter((e) => !e.indexed) ?? [];
+  const anyDiagnosing = diagnosingBlogId !== null;
 
   return (
     <div className="page">
@@ -183,8 +258,8 @@ export default function Home() {
                 >
                   Search Console
                 </a>
-                에서 <code>https://blog.naver.com/본인ID/</code> URL 접두어 속성의 소유자로 등록해야 진단/색인 요청이
-                동작합니다 (README 참고).
+                에서 각 블로그의 <code>https://blog.naver.com/블로그ID/</code> URL 접두어 속성 소유자로
+                등록해야 진단/색인 요청이 동작합니다 (README 참고).
               </p>
               <p className="hint">{hasServiceAccount ? "✓ 등록됨" : "미등록"}</p>
               <textarea
@@ -201,24 +276,72 @@ export default function Home() {
       </section>
 
       <section className="card">
-        <label>네이버 블로그 ID</label>
-        <div className="row">
+        <label>네이버 블로그 목록</label>
+        <div className="row" style={{ marginTop: 6 }}>
           <input
-            value={blogId}
-            onChange={(e) => setBlogId(e.target.value)}
+            value={newBlogId}
+            onChange={(e) => setNewBlogId(e.target.value)}
             placeholder="예: elecinout (블로그 주소를 통째로 붙여넣어도 됩니다)"
           />
-          <button onClick={handleDiagnose} disabled={diagnosing}>
-            {diagnosing ? "진단 중..." : "진단하기"}
-          </button>
+          <button onClick={handleAddBlog}>+ 추가</button>
         </div>
-        {diagnosing && <p className="progress">{progress}</p>}
+
+        {blogIds.length === 0 && <p className="hint" style={{ marginTop: 8 }}>등록된 블로그가 없습니다.</p>}
+
+        <ul className="keyList">
+          {blogIds.map((id) => {
+            const s = summaries[id];
+            const isSelected = id === selectedBlogId;
+            const isDiagnosingThis = diagnosingBlogId === id;
+            return (
+              <li key={id} className="keyItem" style={{ flexWrap: "wrap" }}>
+                <button
+                  onClick={() => handleSelectBlog(id)}
+                  style={{
+                    background: "none",
+                    color: isSelected ? "#1a73e8" : "var(--foreground)",
+                    fontWeight: isSelected ? 700 : 400,
+                    padding: 0,
+                    flex: 1,
+                    textAlign: "left",
+                  }}
+                >
+                  {id}
+                </button>
+                {s && (
+                  <span className={s.missingCount > 0 ? "badge badgeWarn" : "badge badgeOk"}>
+                    {s.indexedCount}/{s.totalPosts}
+                  </span>
+                )}
+                <button onClick={() => handleDiagnose(id)} disabled={anyDiagnosing || diagnosingAll}>
+                  {isDiagnosingThis ? "진단 중..." : "진단"}
+                </button>
+                <button className="removeBtn" onClick={() => handleRemoveBlog(id)}>
+                  삭제
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {blogIds.length > 1 && (
+          <button
+            className="primaryBtn"
+            style={{ marginTop: 8 }}
+            onClick={handleDiagnoseAll}
+            disabled={anyDiagnosing || diagnosingAll}
+          >
+            {diagnosingAll ? "전체 진단 중..." : `등록된 블로그 ${blogIds.length}개 전체 진단`}
+          </button>
+        )}
+
+        {(anyDiagnosing || diagnosingAll) && progress && <p className="progress">{progress}</p>}
         {error && <p className="error">{error}</p>}
       </section>
 
       {report && (
         <section className="card">
-          <h2>진단 결과</h2>
+          <h2>&quot;{report.blogId}&quot; 진단 결과</h2>
           <div className="statRow">
             <div className="stat">
               <span className="statNum">{report.totalPosts}</span>

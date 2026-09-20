@@ -20,6 +20,7 @@ export interface DiagnosisReport {
 const REPORT_PREFIX = "indexkit.report.";
 const SERVICE_ACCOUNT_KEY = "indexkit.serviceAccount";
 const LAST_BLOG_ID_KEY = "indexkit.lastBlogId";
+const BLOG_IDS_KEY = "indexkit.blogIds";
 
 export function saveReport(report: DiagnosisReport): void {
   window.localStorage.setItem(`${REPORT_PREFIX}${report.blogId}`, JSON.stringify(report));
@@ -71,4 +72,32 @@ export function getLastBlogId(): string {
 
 export function setLastBlogId(blogId: string): void {
   window.localStorage.setItem(LAST_BLOG_ID_KEY, blogId);
+}
+
+export function getBlogIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(BLOG_IDS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBlogIds(ids: string[]): void {
+  window.localStorage.setItem(BLOG_IDS_KEY, JSON.stringify(ids));
+}
+
+export function addBlogId(blogId: string): string[] {
+  const ids = getBlogIds();
+  if (ids.includes(blogId)) return ids;
+  const updated = [...ids, blogId];
+  saveBlogIds(updated);
+  return updated;
+}
+
+export function removeBlogId(blogId: string): string[] {
+  const updated = getBlogIds().filter((id) => id !== blogId);
+  saveBlogIds(updated);
+  return updated;
 }
