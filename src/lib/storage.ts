@@ -1,4 +1,5 @@
 import type { ServiceAccount } from "./googleIndexing";
+import type { GithubConfig } from "./github";
 
 export interface DiagnosisEntry {
   logNo: string;
@@ -107,4 +108,27 @@ export function removeBlogId(blogId: string): string[] {
   const updated = getBlogIds().filter((id) => id !== blogId);
   saveBlogIds(updated);
   return updated;
+}
+
+const GITHUB_CONFIG_KEY = "indexkit.githubConfig";
+
+export function getGithubConfig(): GithubConfig | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(GITHUB_CONFIG_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.owner && parsed.repo && parsed.token) return parsed as GithubConfig;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function setGithubConfig(config: GithubConfig): void {
+  window.localStorage.setItem(GITHUB_CONFIG_KEY, JSON.stringify(config));
+}
+
+export function clearGithubConfig(): void {
+  window.localStorage.removeItem(GITHUB_CONFIG_KEY);
 }

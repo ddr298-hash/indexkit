@@ -4,19 +4,25 @@ import { useEffect, useState } from "react";
 import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
 import { inspectUrlsBatch, isPermissionError } from "@/lib/searchConsole";
 import { requestIndexingBatch, type IndexRequestResult } from "@/lib/googleIndexing";
+import { setRepoVariable, triggerWorkflow } from "@/lib/github";
 import {
   addBlogId,
   getBlogIds,
+  getGithubConfig,
   getLastBlogId,
   getServiceAccount,
   loadReport,
   removeBlogId,
   saveReport,
+  setGithubConfig,
   setLastBlogId,
   setServiceAccount,
   type DiagnosisEntry,
   type DiagnosisReport,
 } from "@/lib/storage";
+
+const TOKEN_CREATE_URL =
+  "https://github.com/settings/tokens/new?scopes=repo,workflow&description=indexkit-app";
 
 function siteUrlFor(blogId: string): string {
   return `https://blog.naver.com/${blogId}/`;
@@ -45,6 +51,14 @@ export default function Home() {
   const [indexResults, setIndexResults] = useState<IndexRequestResult[] | null>(null);
   const [indexProgress, setIndexProgress] = useState("");
 
+  const [githubOwner, setGithubOwner] = useState("");
+  const [githubRepo, setGithubRepo] = useState("");
+  const [githubToken, setGithubToken] = useState("");
+  const [hasGithubConfig, setHasGithubConfig] = useState(false);
+  const [githubError, setGithubError] = useState<string | null>(null);
+  const [syncingHub, setSyncingHub] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   useEffect(() => {
     setHasServiceAccount(!!getServiceAccount());
 
@@ -64,6 +78,18 @@ export default function Home() {
       const saved = loadReport(lastBlogId);
       if (saved) setReport(saved);
     }
+
+    const gh = getGithubConfig();
+    if (gh) {
+      setGithubOwner(gh.owner);
+      setGithubRepo(gh.repo);
+      setGithubToken(gh.token);
+      setHasGithubConfig(true);
+    } else {
+      // Prefilled for this app's own repo — first-time users just paste a token.
+      setGithubOwner("ddr298-hash");
+      setGithubRepo("indexkit");
+    }
   }, []);
 
   function handleSaveServiceAccount() {
@@ -75,6 +101,42 @@ export default function Home() {
     setSettingsError(null);
     setSaJson("");
     setHasServiceAccount(true);
+  }
+
+  function handleSaveGithubConfig() {
+    if (!githubOwner.trim() || !githubRepo.trim() || !githubToken.trim()) {
+      setGithubError("저장소 소유자, 저장소 이름, 토큰을 모두 입력해주세요.");
+      return;
+    }
+    setGithubConfig({ owner: githubOwner.trim(), repo: githubRepo.trim(), token: githubToken.trim() });
+    setGithubError(null);
+    setHasGithubConfig(true);
+  }
+
+  async function handleSyncHub() {
+    const gh = getGithubConfig();
+    if (!gh) {
+      setGithubError("먼저 GitHub 연동 정보를 저장해주세요.");
+      return;
+    }
+    if (blogIds.length === 0) {
+      setSyncMessage("등록된 블로그가 없습니다.");
+      return;
+    }
+
+    setSyncingHub(true);
+    setSyncMessage(null);
+    setGithubError(null);
+
+    try {
+      await setRepoVariable(gh, "NAVER_BLOG_ID", blogIds.join(","));
+      await triggerWorkflow(gh, "hub.yml");
+      setSyncMessage(`허브에 반영했습니다 (${blogIds.length}개 블로그) — 잠시 후 사이트가 갱신됩니다.`);
+    } catch (err) {
+      setGithubError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncingHub(false);
+    }
   }
 
   function handleAddBlog() {
@@ -280,6 +342,34 @@ export default function Home() {
               <button onClick={handleSaveServiceAccount}>서비스 계정 저장</button>
               {settingsError && <p className="error">{settingsError}</p>}
             </div>
+
+            <div className="field">
+              <label>GitHub 연동 — 허브 자동 배포용</label>
+              <a className="linkHint" href={TOKEN_CREATE_URL} target="_blank" rel="noopener noreferrer">
+                → 토큰 발급받기 (버튼 누르면 필요한 권한이 미리 체크된 페이지가 열립니다)
+              </a>
+              <p className="hint">
+                열린 페이지에서 맨 아래 <b>Generate token</b> 클릭 → 나오는 토큰(ghp_로 시작)을 복사해서
+                아래 붙여넣기
+              </p>
+              <div className="row" style={{ marginBottom: 6 }}>
+                <input value={githubOwner} onChange={(e) => setGithubOwner(e.target.value)} placeholder="저장소 소유자 (예: ddr298-hash)" />
+              </div>
+              <div className="row" style={{ marginBottom: 6 }}>
+                <input value={githubRepo} onChange={(e) => setGithubRepo(e.target.value)} placeholder="저장소 이름 (예: indexkit)" />
+              </div>
+              <div className="row" style={{ marginBottom: 6 }}>
+                <input
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                  placeholder="토큰 (ghp_...)"
+                  type="password"
+                />
+              </div>
+              <p className="hint">{hasGithubConfig ? "✓ 등록됨" : "미등록"}</p>
+              <button onClick={handleSaveGithubConfig}>GitHub 연동 저장</button>
+              {githubError && <p className="error">{githubError}</p>}
+            </div>
           </div>
         )}
       </section>
@@ -349,6 +439,24 @@ export default function Home() {
 
         {(anyDiagnosing || diagnosingAll) && progress && <p className="progress">{progress}</p>}
         {error && <p className="error">{error}</p>}
+
+        {blogIds.length > 0 && (
+          <>
+            <button
+              className="primaryBtn"
+              style={{ marginTop: 8, background: "#1e8e3e" }}
+              onClick={handleSyncHub}
+              disabled={syncingHub || !hasGithubConfig}
+            >
+              {syncingHub ? "반영 중..." : "🔗 허브에 반영 (구글 노출용 사이트 갱신)"}
+            </button>
+            {!hasGithubConfig && (
+              <p className="hint">설정에서 GitHub 연동을 먼저 저장하면 이 버튼이 활성화됩니다.</p>
+            )}
+            {syncMessage && <p className="hint">{syncMessage}</p>}
+            {githubError && <p className="error">{githubError}</p>}
+          </>
+        )}
       </section>
 
       {report && (
