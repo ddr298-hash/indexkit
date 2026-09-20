@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
 import { inspectUrlsBatch, isPermissionError } from "@/lib/searchConsole";
-import { requestIndexingBatch, type IndexRequestResult } from "@/lib/googleIndexing";
 import { getSitemapStatus, type SitemapStatus } from "@/lib/sitemap";
 import {
   enablePages,
@@ -65,7 +64,6 @@ const GUIDE_SECTIONS: GuideSection[] = [
     steps: [
       "console.cloud.google.com 접속 → 새 프로젝트 생성",
       "API 및 서비스 → 라이브러리에서 'Google Search Console API' 검색 후 활성화",
-      "(선택) 'Web Search Indexing API'도 활성화 — 진단/색인 요청 버튼용",
     ],
   },
   {
@@ -140,10 +138,6 @@ export default function Home() {
   const [diagnosingAll, setDiagnosingAll] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  const [indexing, setIndexing] = useState(false);
-  const [indexResults, setIndexResults] = useState<IndexRequestResult[] | null>(null);
-  const [indexProgress, setIndexProgress] = useState("");
 
   const [githubOwner, setGithubOwner] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
@@ -353,7 +347,6 @@ export default function Home() {
 
   function handleSelectBlog(id: string) {
     setSelectedBlogId(id);
-    setIndexResults(null);
     setReport(loadReport(id));
   }
 
@@ -406,7 +399,6 @@ export default function Home() {
 
     setError(null);
     setDiagnosingBlogId(blogId);
-    setIndexResults(null);
 
     try {
       setProgress(`"${blogId}" 블로그 글 목록 수집 중...`);
@@ -431,7 +423,6 @@ export default function Home() {
 
     setError(null);
     setDiagnosingAll(true);
-    setIndexResults(null);
 
     for (let i = 0; i < blogIds.length; i++) {
       const blogId = blogIds[i];
@@ -448,36 +439,6 @@ export default function Home() {
     setDiagnosingAll(false);
     setProgress("");
     if (selectedBlogId) setReport(loadReport(selectedBlogId));
-  }
-
-  async function handleRequestIndex() {
-    if (!report) return;
-    const sa = getServiceAccount();
-    if (!sa) {
-      setError("설정에서 Google 서비스 계정 키(JSON)를 먼저 등록해주세요.");
-      return;
-    }
-    const missing = report.entries.filter((e) => !e.indexed);
-    if (missing.length === 0) return;
-
-    setError(null);
-    setIndexing(true);
-    setIndexResults(null);
-
-    try {
-      const results = await requestIndexingBatch(
-        missing.map((e) => e.url),
-        sa,
-        300,
-        (_result, done, total) => setIndexProgress(`색인 요청 중... (${done}/${total})`),
-      );
-      setIndexResults(results);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIndexing(false);
-      setIndexProgress("");
-    }
   }
 
   const missingEntries = report?.entries.filter((e) => !e.indexed) ?? [];
@@ -768,47 +729,14 @@ export default function Home() {
           </div>
 
           {report.missingCount > 0 && (
-            <>
-              <button className="primaryBtn" onClick={handleRequestIndex} disabled={indexing}>
-                {indexing ? "요청 중..." : `누락 글 ${missingEntries.length}개 색인 요청`}
-              </button>
-              {indexing && <p className="progress">{indexProgress}</p>}
-
-              {indexResults && (
-                <>
-                  <p className="hint">
-                    성공 {indexResults.filter((r) => r.ok).length} / 실패{" "}
-                    {indexResults.filter((r) => !r.ok && !r.skipped).length} / 건너뜀{" "}
-                    {indexResults.filter((r) => r.skipped).length}
-                  </p>
-                  {indexResults.some((r) => r.skipped) && (
-                    <p className="error">
-                      오늘의 Google Indexing API 할당량(하루 200건)을 다 써서 나머지는 요청하지 않았습니다.
-                      태평양시 자정(한국시간 오후 5시경) 이후 초기화되니 그 뒤에 다시 시도해주세요.
-                    </p>
-                  )}
-                </>
-              )}
-
-              <ul className="postList">
-                {missingEntries.map((e) => {
-                  const result = indexResults?.find((r) => r.url === e.url);
-                  return (
-                    <li key={e.logNo} className="postItem">
-                      <div className="postTitle">{e.title}</div>
-                      <div className="postMeta">
-                        {e.addDate}
-                        {result && (
-                          <span className={result.ok ? "badge badgeOk" : "badge badgeWarn"}>
-                            {result.ok ? "요청됨" : `실패: ${result.error}`}
-                          </span>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
+            <ul className="postList">
+              {missingEntries.map((e) => (
+                <li key={e.logNo} className="postItem">
+                  <div className="postTitle">{e.title}</div>
+                  <div className="postMeta">{e.addDate}</div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}
