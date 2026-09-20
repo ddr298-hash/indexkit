@@ -66,7 +66,12 @@ Search Console 소유권 인증이 네이버 블로그 구조상 막힐 수 있�
 
 ```bash
 npm run generate-hub -- 내블로그ID https://내가-소유한-도메인.example
+# 여러 블로그를 한 허브에 합칠 수도 있음 (쉼표로 구분)
+npm run generate-hub -- 블로그ID1,블로그ID2 https://내가-소유한-도메인.example
 ```
+
+여러 블로그를 넣으면 `posts/<블로그ID>/<logNo>.html`로 블로그별 폴더에 나눠 생성되고, 최상단
+`index.html`에는 블로그별 섹션으로 묶여서 나열됩니다. 사이트맵·RSS는 전체 블로그를 합쳐 하나로 생성됩니다.
 
 `generated-hub/`에 `index.html`, `posts/<logNo>.html`(글마다 1개), `sitemap.xml`, `rss.xml`, `robots.txt`가
 생성됩니다. **중요: `blog.naver.com` 주소가 아니라, 이 허브를 배포한 본인 도메인 쪽을 Search Console에
@@ -105,7 +110,7 @@ npm run submit-sitemap -- https://본인도메인/ https://본인도메인/sitem
 
 1. **Settings → Pages → Source**를 "GitHub Actions"로 설정
 2. **Settings → Secrets and variables → Actions → Variables**에 추가:
-   - `NAVER_BLOG_ID` = 본인 블로그 ID
+   - `NAVER_BLOG_ID` = 본인 블로그 ID (여러 개면 쉼표로 구분, 예: `elecinout,elecgoship`)
    - `HUB_DOMAIN` = 허브 도메인 (예: `https://ddr298-hash.github.io/indexkit`)
 3. 같은 화면의 **Secrets** 탭에 추가:
    - `GOOGLE_SERVICE_ACCOUNT_JSON` = 서비스 계정 키 JSON 파일 내용 전체
