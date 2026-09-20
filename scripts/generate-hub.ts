@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fetchAllNaverPosts, naverPostUrl } from "../src/lib/naver";
 
@@ -122,8 +122,17 @@ ${rssItems}
 
   writeFileSync(join(outDir, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${baseUrl}/sitemap.xml\n`, "utf-8");
 
+  // Files that must survive every regeneration (e.g. a Search Console HTML
+  // verification file) live in hub-static/ and get copied in as-is, last —
+  // this folder is git-tracked, so they persist across CI regenerations too.
+  const staticDir = join(process.cwd(), "hub-static");
+  if (existsSync(staticDir)) {
+    cpSync(staticDir, outDir, { recursive: true, filter: (src) => !src.endsWith("README.md") });
+  }
+
   console.log(`\n생성 완료: ${outDir}`);
   console.log(`- index.html, posts/*.html (${entries.length}개), sitemap.xml, rss.xml, robots.txt`);
+  if (existsSync(staticDir)) console.log(`- hub-static/ 내용도 함께 복사됨 (인증 파일 등)`);
   console.log(`\n이 폴더를 ${baseUrl} 에 배포한 뒤 Search Console에 등록하고 sitemap.xml을 제출하세요.`);
   console.log(`(서비스 계정을 이 도메인의 소유자로 등록해두면 npm run submit-sitemap 으로 자동 제출 가능)`);
 }

@@ -69,29 +69,48 @@ npm run generate-hub -- 내블로그ID https://내가-소유한-도메인.exampl
 ```
 
 `generated-hub/`에 `index.html`, `posts/<logNo>.html`(글마다 1개), `sitemap.xml`, `rss.xml`, `robots.txt`가
-생성됩니다. 이 폴더를 원하는 정적 호스팅에 배포한 뒤, 그 도메인을 Search Console에 등록(정상적인 DNS/HTML
-인증 — 본인 도메인이라 문제없이 됩니다)하고 서비스 계정을 소유자로 추가하면:
+생성됩니다. **중요: `blog.naver.com` 주소가 아니라, 이 허브를 배포한 본인 도메인 쪽을 Search Console에
+등록**해야 합니다 — Naver 쪽은 DNS·`<head>`를 건드릴 수 없어 소유권 등록 대상이 될 수 없습니다.
+
+**개인 도메인이 있는 경우** (예: `https://blog.example.com`)
+
+1. Search Console에서 속성 추가 → **도메인** 선택 → 프로토콜 없이 `example.com`만 입력
+2. Google이 주는 TXT 값(`google-site-verification=xxxx`)을 도메인 DNS의 **TXT 레코드**(호스트 `@`)로 추가
+3. 반영까지 몇 분~최대 2~3일. 확인되면 인증 끝 — **TXT 레코드는 이후에도 삭제하지 마세요**
+
+**GitHub Pages 기본 주소를 쓰는 경우** (예: `https://사용자명.github.io/indexkit/`) — `github.io`는
+DNS를 소유한 게 아니므로 도메인 속성은 못 씁니다. 대신:
+
+1. Search Console에서 **URL 접두어** 선택 → 전체 주소 입력 → **HTML 파일** 인증 방법 선택
+2. Google이 주는 `googleXXXXXXXXXXXXXXXX.html` 파일을 **`hub-static/`에 그대로 저장**하고 git에 커밋
+   (`generate-hub`를 실행할 때마다 `generated-hub/`가 새로 만들어지는데, `hub-static/`에 있는 파일은
+   매번 그대로 함께 복사되므로 GitHub Actions 자동 배포에서도 인증 파일이 사라지지 않습니다)
+3. 배포 후 `https://사용자명.github.io/indexkit/googleXXXXXXXXXXXXXXXX.html`이 열리는지 확인
+4. Search Console에서 확인 클릭
+
+인증이 끝났으면 서비스 계정을 Search Console 사용자로 추가하고:
 
 ```bash
-npm run submit-sitemap -- https://내도메인.example/ https://내도메인.example/sitemap.xml
+npm run submit-sitemap -- https://본인도메인/ https://본인도메인/sitemap.xml
 ```
 
 으로 사이트맵을 즉시 제출할 수 있습니다. 어디까지나 구글이 원문 URL을 "발견"할 확률을 높이는 것이며,
-네이버 원문 자체의 색인을 보장하지 않습니다.
+네이버 원문 자체의 색인을 보장하지 않습니다. ([DNS 인증](https://support.google.com/webmasters/answer/9008080?hl=ko) /
+[HTML 파일 인증](https://support.google.com/webmasters/answer/9008080?hl=ko) 공식 안내)
 
 ### GitHub Actions로 자동화
 
-`.github/workflows/hub.yml`이 매일 자동으로: 글 목록 재수집 → 허브 재생성 → **GitHub Pages 배포** →
-사이트맵 자동 제출까지 실행합니다. 사용하려면 저장소에서:
+`.github/workflows/hub.yml`이 12시간마다 자동으로: 글 목록 재수집 → 허브 재생성(`hub-static/` 포함) →
+**GitHub Pages 배포** → 사이트맵 자동 제출까지 실행합니다. 사용하려면 저장소에서:
 
 1. **Settings → Pages → Source**를 "GitHub Actions"로 설정
 2. **Settings → Secrets and variables → Actions → Variables**에 추가:
    - `NAVER_BLOG_ID` = 본인 블로그 ID
-   - `HUB_DOMAIN` = GitHub Pages 주소 (예: `https://ddr298-hash.github.io/indexkit`)
+   - `HUB_DOMAIN` = 허브 도메인 (예: `https://ddr298-hash.github.io/indexkit`)
 3. 같은 화면의 **Secrets** 탭에 추가:
    - `GOOGLE_SERVICE_ACCOUNT_JSON` = 서비스 계정 키 JSON 파일 내용 전체
-4. Actions 탭에서 "Generate & publish discovery hub" 워크플로우를 한 번 수동 실행(`Run workflow`)해서
-   확인 — 이후로는 매일 자동 실행됩니다.
+4. Search Console 소유권 인증 완료 후(위 참고), Actions 탭에서 "Generate & publish discovery hub"
+   워크플로우를 한 번 수동 실행(`Run workflow`)해서 확인 — 이후로는 자동 실행됩니다.
 
 ## 설치 및 실행
 
@@ -132,7 +151,9 @@ APK는 서명되지 않은 디버그 빌드입니다. 설치 시 폰에서 "출�
 - `scripts/request-index.ts` — 색인 요청 CLI (데스크톱/Node용)
 - `scripts/generate-hub.ts` — 검색 발견용 허브(정적 사이트) 생성 CLI
 - `scripts/submit-sitemap.ts` — 생성된 사이트맵을 Search Console에 제출하는 CLI
-- `.github/workflows/hub.yml` — 허브 생성·배포·사이트맵 제출 자동화 (매일 스케줄)
+- `.github/workflows/hub.yml` — 허브 생성·배포·사이트맵 제출 자동화 (12시간 스케줄)
+- `hub-static/` — 매 생성 시 `generated-hub/`로 그대로 복사되는 고정 파일 (Search Console 인증 파일 등, git 커밋)
+- `generated-hub/` — `generate-hub` 실행 결과물 (git 미포함)
 - `src/app/page.tsx` — 안드로이드 앱의 화면 전체 (설정 + 진단 + 색인 요청)
 - `src/lib/naver.ts` — 네이버 블로그 글 목록 크롤링 (Node·브라우저 공용)
 - `src/lib/googleAuth.ts` — 서비스 계정 키로 OAuth2 액세스 토큰 발급 (Node·브라우저 공용)
