@@ -16,6 +16,8 @@ export interface DiagnosisReport {
   indexedCount: number;
   missingCount: number;
   entries: DiagnosisEntry[];
+  /** Set when most Search Console calls failed with a permission error — the counts above aren't trustworthy. */
+  verificationError?: string;
 }
 
 const REPORTS_DIR = join(process.cwd(), "reports");

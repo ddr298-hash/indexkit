@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { fetchAllNaverPosts, naverPostUrl } from "../src/lib/naver";
-import { inspectUrlsBatch } from "../src/lib/searchConsole";
+import { inspectUrlsBatch, isPermissionError } from "../src/lib/searchConsole";
 import { saveReport, type DiagnosisEntry } from "../src/lib/report";
 import type { ServiceAccount } from "../src/lib/googleIndexing";
 
@@ -49,6 +49,10 @@ async function main() {
     indexed: inspections[i].indexed,
   }));
 
+  const permissionErrors = inspections.filter((r) => r.error && isPermissionError(r.error));
+  const verificationError =
+    permissionErrors.length > inspections.length / 2 ? permissionErrors[0].error : undefined;
+
   const indexedCount = entries.filter((e) => e.indexed).length;
   const missingCount = entries.length - indexedCount;
 
@@ -59,11 +63,22 @@ async function main() {
     indexedCount,
     missingCount,
     entries,
+    verificationError,
   };
 
   const path = saveReport(report);
 
   console.log("");
+
+  if (verificationError) {
+    console.log("========== ⚠️ Search Console 인증 필요 ==========");
+    console.log(`아래 숫자는 신뢰할 수 없습니다 — 호출이 전부 실패해서 "미색인"으로 표시된 것입니다.`);
+    console.log(`서비스 계정을 https://blog.naver.com/${blogId}/ 속성의 소유자로 등록한 뒤 다시 실행하세요.`);
+    console.log(`실제 오류: ${verificationError}`);
+    console.log("==================================================");
+    return;
+  }
+
   console.log("========== 진단 결과 ==========");
   console.log(`전체 글:   ${report.totalPosts}`);
   console.log(`색인됨:    ${indexedCount} (${((indexedCount / (report.totalPosts || 1)) * 100).toFixed(1)}%)`);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { extractBlogId, fetchAllNaverPosts, naverPostUrl } from "@/lib/naver";
-import { inspectUrlsBatch } from "@/lib/searchConsole";
+import { inspectUrlsBatch, isPermissionError } from "@/lib/searchConsole";
 import { requestIndexingBatch, type IndexRequestResult } from "@/lib/googleIndexing";
 import {
   addBlogId,
@@ -22,7 +22,7 @@ function siteUrlFor(blogId: string): string {
   return `https://blog.naver.com/${blogId}/`;
 }
 
-type Summary = Pick<DiagnosisReport, "totalPosts" | "indexedCount" | "missingCount">;
+type Summary = Pick<DiagnosisReport, "totalPosts" | "indexedCount" | "missingCount" | "verificationError">;
 
 export default function Home() {
   const [saJson, setSaJson] = useState("");
@@ -122,6 +122,14 @@ export default function Home() {
       indexed: inspections[i].indexed,
     }));
 
+    // If most calls failed with a permission error, the service account
+    // almost certainly isn't verified as an owner for this blog's Search
+    // Console property yet — the indexed/missing counts below would just
+    // be "every call failed" masquerading as "nothing is indexed".
+    const permissionErrors = inspections.filter((r) => r.error && isPermissionError(r.error));
+    const verificationError =
+      permissionErrors.length > inspections.length / 2 ? permissionErrors[0].error : undefined;
+
     const indexedCount = entries.filter((e) => e.indexed).length;
     const newReport: DiagnosisReport = {
       blogId,
@@ -130,6 +138,7 @@ export default function Home() {
       indexedCount,
       missingCount: entries.length - indexedCount,
       entries,
+      verificationError,
     };
 
     saveReport(newReport);
@@ -308,11 +317,14 @@ export default function Home() {
                 >
                   {id}
                 </button>
-                {s && (
-                  <span className={s.missingCount > 0 ? "badge badgeWarn" : "badge badgeOk"}>
-                    {s.indexedCount}/{s.totalPosts}
-                  </span>
-                )}
+                {s &&
+                  (s.verificationError ? (
+                    <span className="badge badgeWarn">인증 필요</span>
+                  ) : (
+                    <span className={s.missingCount > 0 ? "badge badgeWarn" : "badge badgeOk"}>
+                      {s.indexedCount}/{s.totalPosts}
+                    </span>
+                  ))}
                 <button onClick={() => handleDiagnose(id)} disabled={anyDiagnosing || diagnosingAll}>
                   {isDiagnosingThis ? "진단 중..." : "진단"}
                 </button>
@@ -342,6 +354,27 @@ export default function Home() {
       {report && (
         <section className="card">
           <h2>&quot;{report.blogId}&quot; 진단 결과</h2>
+
+          {report.verificationError && (
+            <p className="error" style={{ marginBottom: 12 }}>
+              ⚠️ Search Console 인증이 안 되어 있어 아래 숫자를 믿을 수 없습니다 (호출이 전부 실패해서
+              "미색인"으로 표시된 것일 뿐입니다). 이 서비스 계정을{" "}
+              <a
+                className="linkHint"
+                style={{ display: "inline" }}
+                href="https://search.google.com/search-console"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Search Console
+              </a>
+              에서 <code>https://blog.naver.com/{report.blogId}/</code> 속성의 소유자로 등록한 뒤 다시
+              진단해주세요.
+              <br />
+              <span className="hint">실제 오류: {report.verificationError}</span>
+            </p>
+          )}
+
           <div className="statRow">
             <div className="stat">
               <span className="statNum">{report.totalPosts}</span>

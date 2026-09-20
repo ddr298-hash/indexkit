@@ -15,6 +15,13 @@ export interface DiagnosisReport {
   indexedCount: number;
   missingCount: number;
   entries: DiagnosisEntry[];
+  /**
+   * Set when the Search Console calls for this blog mostly failed with a
+   * permission error (service account not verified as owner) rather than
+   * genuinely returning "not indexed" — the indexed/missing counts above
+   * are NOT trustworthy when this is present.
+   */
+  verificationError?: string;
 }
 
 const REPORT_PREFIX = "indexkit.report.";

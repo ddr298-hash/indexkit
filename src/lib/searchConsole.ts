@@ -11,6 +11,18 @@ const INSPECT_ENDPOINT = "https://searchconsole.googleapis.com/v1/urlInspection/
 const SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 
 /**
+ * True when the API rejected the call because the service account isn't a
+ * verified owner of the Search Console property (as opposed to some other
+ * transient failure). This is the single biggest failure mode for this
+ * project — a whole batch of these looks identical to "genuinely not
+ * indexed" unless callers check for it explicitly.
+ */
+export function isPermissionError(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("permission") || m.includes("forbidden") || m.includes("does not have sufficient");
+}
+
+/**
  * Checks a single URL's real Google index status via Search Console's URL
  * Inspection API. Replaces the old Custom Search JSON API approach — Google
  * closed that API to new projects in 2025 (shuts down entirely 2027-01-01),
