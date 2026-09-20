@@ -289,3 +289,40 @@ button:disabled {
   align-items: center;
   gap: 8px;
 }
+
+.guideList {
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  margin-bottom: 8px;
+}
+
+.guideList li {
+  margin-bottom: 4px;
+}
+
+.callout {
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.calloutTitle {
+  font-weight: 700;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.calloutWarn {
+  background: color-mix(in srgb, #d93025 8%, transparent);
+  border: 1px solid color-mix(in srgb, #d93025 30%, transparent);
+  color: var(--foreground);
+}
+
+.calloutOk {
+  background: color-mix(in srgb, #1e8e3e 8%, transparent);
+  border: 1px solid color-mix(in srgb, #1e8e3e 30%, transparent);
+  color: var(--foreground);
+}

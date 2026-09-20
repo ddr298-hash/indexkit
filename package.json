@@ -19,6 +19,7 @@
     "@capacitor/core": "^8.5.2",
     "dotenv": "^18.0.1",
     "jose": "^6.2.12",
+    "libsodium-wrappers": "^0.8.4",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
+    "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
